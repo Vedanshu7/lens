@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package lens.v1;
+
+option go_package = "github.com/vedanshu/lens/internal/proto/lensv1";
+
+service LensAgent {
+  rpc Invalidate(InvalidateRequest) returns (InvalidateResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+}
+
+message InvalidateRequest {
+  bytes  payload = 1;
+  string origin  = 2;
+  string time    = 3;
+}
+
+message InvalidateResponse {
+  string instance = 1;
+  bool   success  = 2;
+  string error    = 3;
+}
+
+message GetRequest {
+  bytes payload = 1;
+}
+
+message GetResponse {
+  bytes body        = 1;
+  int32 status_code = 2;
+}
