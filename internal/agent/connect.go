@@ -1,0 +1,195 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/vedanshu/lens/internal/discovery"
+	"github.com/vedanshu/lens/internal/store"
+	itransport "github.com/vedanshu/lens/internal/transport"
+)
+
+// Connect retries dialing the target service in a loop until ctx is cancelled.
+// After a successful dial it blocks until the reconnect channel fires, then
+// waits 5 seconds before attempting to reconnect.
+func (a *Agent) Connect(ctx context.Context) {
+	for {
+		if err := a.dial(ctx); err != nil {
+			slog.Warn("waiting for target", "err", err, "retryIn", "10s")
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(10 * time.Second):
+				continue
+			}
+		}
+
+		<-a.reconnectCh
+		if ctx.Err() != nil {
+			return
+		}
+
+		slog.Warn("connection lost, reconnecting")
+		a.live.Store(false)
+		a.cancelDial()
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+// dial verifies persistence connectivity, resolves the target service identity,
+// and lazily initialises transport and discovery on the first call. Subsequent
+// calls after a reconnect reuse the existing providers because gRPC and gossip
+// connections are independent of the target HTTP connection.
+func (a *Agent) dial(ctx context.Context) error {
+	if err := a.store.Ping(ctx); err != nil {
+		return fmt.Errorf("persistence: %w", err)
+	}
+
+	info, err := a.fetchTargetInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("target info: %w", err)
+	}
+	a.Info = info
+	slog.Info("connected to target", "service", info.Service, "instance", info.Instance)
+
+	if a.transport == nil {
+		t, err := itransport.New(a, a.Config.Transport, a.transportCfg)
+		if err != nil {
+			return fmt.Errorf("transport: %w", err)
+		}
+		a.transport = t
+	}
+
+	if a.disc == nil {
+		disc, err := discovery.New(a.store, a.Config.Discovery, a.discoveryCfg)
+		if err != nil {
+			return fmt.Errorf("discovery: %w", err)
+		}
+		a.disc = disc
+
+		self := discovery.ServiceInstance{
+			Service:  a.Info.Service,
+			Instance: a.Info.Instance,
+			GRPCAddr: a.Config.AdvertiseAddr + ":" + a.Config.GRPCPort,
+			AgentURL: a.selfURL(),
+		}
+		if err := disc.Register(ctx, self); err != nil {
+			return fmt.Errorf("discovery register: %w", err)
+		}
+
+		eventCh, err := disc.Watch(ctx)
+		if err != nil {
+			return fmt.Errorf("discovery watch: %w", err)
+		}
+		go a.watchPeers(eventCh)
+	}
+
+	if a.Config.ReplayEnabled {
+		if err := a.replayMissed(ctx); err != nil {
+			slog.Warn("replay failed", "err", err)
+		}
+	}
+
+	_, cancel := context.WithCancel(ctx)
+	a.dialCancel = cancel
+	a.reconnectCh = make(chan struct{}, 1)
+	a.live.Store(true)
+	return nil
+}
+
+// fetchTargetInfo calls /internal/lens/info on the target service and returns
+// the decoded TargetInfo. Returns an error if the request or decoding fails.
+func (a *Agent) fetchTargetInfo(ctx context.Context) (TargetInfo, error) {
+	resp, err := a.get(ctx, a.Config.TargetURL+"/internal/lens/info")
+	if err != nil {
+		return TargetInfo{}, err
+	}
+	defer closeBody(resp)
+	var info TargetInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return TargetInfo{}, err
+	}
+	return info, nil
+}
+
+// deregister writes a checkpoint timestamp and removes this instance from discovery.
+// Called during graceful shutdown so peers stop routing to this instance.
+func (a *Agent) deregister(ctx context.Context) {
+	if a.disc != nil {
+		a.disc.Deregister(ctx, discovery.ServiceInstance{ //nolint:errcheck
+			Service:  a.Info.Service,
+			Instance: a.Info.Instance,
+		})
+	}
+	err := a.store.Set(ctx,
+		store.CheckpointKey(a.Info.Service, a.Info.Instance),
+		time.Now().UTC().Format(time.RFC3339),
+		24*time.Hour,
+	)
+	if err != nil {
+		slog.Error("deregister checkpoint failed", "err", err)
+	}
+	slog.Info("deregistered", "service", a.Info.Service, "instance", a.Info.Instance)
+}
+
+// replayMissed reads the replay log from persistence and applies any invalidations
+// that arrived after the last recorded checkpoint and within the replay window.
+func (a *Agent) replayMissed(ctx context.Context) error {
+	checkpoint, err := a.store.Get(ctx, store.CheckpointKey(a.Info.Service, a.Info.Instance))
+	if err != nil {
+		return fmt.Errorf("read checkpoint: %w", err)
+	}
+	if checkpoint == "" {
+		return nil
+	}
+	lastSeen, err := time.Parse(time.RFC3339, checkpoint)
+	if err != nil {
+		return fmt.Errorf("parse checkpoint: %w", err)
+	}
+
+	entries, err := a.store.LRange(ctx, store.LogKey(a.Info.Service), 0, -1)
+	if err != nil {
+		return fmt.Errorf("read log: %w", err)
+	}
+
+	cutoff := time.Now().UTC().Add(-time.Duration(a.Config.ReplayWindowHours) * time.Hour)
+	applied := 0
+	for _, raw := range entries {
+		var e struct {
+			Payload json.RawMessage `json:"payload"`
+			Ts      string          `json:"ts"`
+		}
+		if json.Unmarshal([]byte(raw), &e) != nil {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, e.Ts)
+		if err != nil || !ts.After(lastSeen) || ts.Before(cutoff) {
+			continue
+		}
+		resp, err := a.post(ctx,
+			a.Config.TargetURL+"/internal/lens/invalidate",
+			"application/json",
+			strings.NewReader(string(e.Payload)),
+		)
+		if err != nil {
+			slog.Warn("replay invalidation failed", "err", err)
+			continue
+		}
+		closeBody(resp)
+		applied++
+		a.Metrics.replayApplied.WithLabelValues(a.Info.Service).Inc()
+	}
+
+	if applied > 0 {
+		slog.Info("replay complete", "service", a.Info.Service, "applied", applied)
+	}
+	return nil
+}
