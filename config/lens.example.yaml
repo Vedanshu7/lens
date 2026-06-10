@@ -1,0 +1,88 @@
+apiVersion: lens.io/v1alpha1
+kind: SidecarConfig
+
+# Point to this file via: LENS_CONFIG_FILE=./config/lens.yaml
+# All values support ${ENV_VAR} substitution.
+# LENS_* env vars remain as a fallback when no config file is set.
+
+transport:
+  # grpc (default) — direct pod-to-pod, zero infra, best for ≤100 pods
+  # nats           — NATS broker fan-out, better for 100+ pods
+  # kafka          — Kafka topics (build tag: lens_kafka)
+  # redis-streams  — reuses your existing Redis, zero extra infra
+  provider: grpc
+  config:
+    grpcPort: "8901"
+    # NATS example:
+    # natsUrl: ${LENS_NATS_URL}
+
+persistence:
+  # redis  (default) — mature, pipeline, used for audit + replay logs
+  # valkey           — Redis-compatible, higher throughput (build tag: lens_valkey)
+  # memory           — in-memory only; audit/replay lost on restart (local dev)
+  provider: redis
+  config:
+    addr: ${LENS_REDIS_ADDR}
+    db: 0
+    # password: ${REDIS_PASSWORD}
+    # Override prefix when sharing Redis with other systems:
+    # keyPrefix: "myapp-lens"
+
+discovery:
+  # memberlist (default) — SWIM gossip, P2P, zero infra, works everywhere
+  # static             — fixed seed list from config (no dynamic join/leave)
+  # consul             — Consul service catalog (build tag: lens_consul)
+  # kubernetes         — watches EndpointSlices (build tag: lens_k8s)
+  provider: memberlist
+  config:
+    bindPort: 7946
+    # Static example:
+    # seeds:
+    #   - instance: pod-1
+    #     grpcAddr: "10.0.0.1:8901"
+    #     agentURL: "http://10.0.0.1:8900"
+
+observer:
+  enabled: false   # set to true to enable structured event recording
+
+  providers:
+    - name: prometheus  # always-on baseline metrics (registered even without observer mode)
+      config: {}
+
+    # OpenTelemetry — exports to Jaeger, Grafana Tempo, Datadog, Honeycomb, etc.
+    # - name: otel
+    #   config:
+    #     endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+    #     serviceName: lens-${LENS_SERVICE_NAME}
+    #     insecure: false
+
+    # SQL — persist events for the Lens dashboard Observability tab
+    # - name: sql
+    #   config:
+    #     driver: postgres       # postgres | mysql | sqlserver
+    #     dsn: ${DATABASE_URL}
+    #     table: lens_events
+    #     batchSize: 100
+    #     flushIntervalMs: 1000
+
+    # Webhook — POST JSON events to any HTTP endpoint (Loki push, custom)
+    # - name: webhook
+    #   config:
+    #     url: ${LOKI_PUSH_URL}
+    #     headers:
+    #       X-Scope-OrgID: myorg
+
+    # Stdout — structured JSON lines captured by any log shipper
+    # - name: stdout
+    #   config:
+    #     format: json
+
+agent:
+  port: "8900"
+  bindAddr: "0.0.0.0"
+  token: ${LENS_TOKEN}
+  cooldownMs: 1000
+  logLevel: info
+  replay:
+    enabled: true
+    windowHours: 24
