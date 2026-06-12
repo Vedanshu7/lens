@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 
 	lensv1 "github.com/vedanshu/lens/internal/proto/lensv1"
 	"github.com/vedanshu/lens/internal/transport"
@@ -156,7 +157,7 @@ func (t *grpcTransport) conn(addr string) (*grpc.ClientConn, error) {
 		result = v.(*grpc.ClientConn)
 	} else {
 		var c *grpc.ClientConn
-		c, err = grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		c, err = grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()), clientKeepalive)
 		if err == nil {
 			actual, loaded := t.conns.LoadOrStore(addr, c)
 			if loaded {
@@ -169,6 +170,14 @@ func (t *grpcTransport) conn(addr string) (*grpc.ClientConn, error) {
 	}
 	return result, err
 }
+
+// clientKeepalive sends a keepalive ping every 30 s so that stale TCP connections
+// are detected before the next RPC call rather than at call time.
+var clientKeepalive = grpc.WithKeepaliveParams(keepalive.ClientParameters{
+	Time:                30 * time.Second,
+	Timeout:             5 * time.Second,
+	PermitWithoutStream: true,
+})
 
 // grpcHandler is separate from grpcTransport to avoid the naming conflict between
 // Transport.Get(ctx, svc, instance, key) and LensAgentServer.Get(ctx, *GetRequest).
