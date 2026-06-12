@@ -214,9 +214,13 @@ func (m *MultiObserver) drain() {
 	}
 }
 
-// Record enqueues event e for delivery. Drops the event when the buffer is full
-// so the invalidation hot path is never blocked.
+// Record enqueues event e for delivery. Returns immediately when no observers
+// are configured. Drops the event when the buffer is full so the invalidation
+// hot path is never blocked.
 func (m *MultiObserver) Record(_ context.Context, e Event) error {
+	if len(m.observers) == 0 {
+		return nil
+	}
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now().UTC()
 	}
