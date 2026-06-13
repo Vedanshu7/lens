@@ -334,4 +334,4 @@ Minimum Go version: **1.24**.
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
