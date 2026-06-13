@@ -1,3 +1,5 @@
+//go:build lens_memberlist
+
 // Package memberlistdiscovery implements peer discovery using the Hashicorp memberlist
 // library for gossip-based cluster membership. It does not require any external
 // infrastructure — peers discover each other by joining a bootstrap seed list

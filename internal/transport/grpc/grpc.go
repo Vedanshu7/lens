@@ -1,3 +1,5 @@
+//go:build lens_grpc
+
 // Package grpctransport implements the Transport interface using direct pod-to-pod gRPC.
 // It starts a gRPC server on the configured port and maintains a pool of outbound
 // client connections, evicting them on failure so re-dial happens automatically.

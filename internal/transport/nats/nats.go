@@ -1,3 +1,5 @@
+//go:build lens_nats
+
 // Package natstransport implements the Transport interface using NATS.
 // All instances subscribe to a shared broadcast subject so the NATS broker handles
 // fan-out, and each instance also subscribes to a direct-addressed get subject

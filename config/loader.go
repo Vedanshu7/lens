@@ -37,12 +37,14 @@ type ObserverBlock struct {
 
 // AgentBlock holds agent-level settings that do not belong to a specific provider.
 type AgentBlock struct {
-	Port       string      `yaml:"port"`
-	BindAddr   string      `yaml:"bindAddr"`
-	Token      string      `yaml:"token"`
-	CooldownMs int         `yaml:"cooldownMs"`
-	LogLevel   string      `yaml:"logLevel"`
-	Replay     ReplayBlock `yaml:"replay"`
+	TargetURL     string      `yaml:"targetURL"`
+	Port          string      `yaml:"port"`
+	BindAddr      string      `yaml:"bindAddr"`
+	AdvertiseAddr string      `yaml:"advertiseAddr"`
+	Token         string      `yaml:"token"`
+	CooldownMs    int         `yaml:"cooldownMs"`
+	LogLevel      string      `yaml:"logLevel"`
+	Replay        ReplayBlock `yaml:"replay"`
 }
 
 // ReplayBlock controls the missed-invalidation replay feature.

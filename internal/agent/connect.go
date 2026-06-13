@@ -61,7 +61,7 @@ func (a *Agent) dial(ctx context.Context) error {
 	slog.Info("connected to target", "service", info.Service, "instance", info.Instance)
 
 	if a.transport == nil {
-		t, err := itransport.New(a, a.Config.Transport, a.transportCfg)
+		t, err := itransport.New(a, a.Config.Transport, a.Config.TransportConfig)
 		if err != nil {
 			return fmt.Errorf("transport: %w", err)
 		}
@@ -69,16 +69,20 @@ func (a *Agent) dial(ctx context.Context) error {
 	}
 
 	if a.disc == nil {
-		disc, err := discovery.New(a.store, a.Config.Discovery, a.discoveryCfg)
+		disc, err := discovery.New(a.store, a.Config.Discovery, a.Config.DiscoveryConfig)
 		if err != nil {
 			return fmt.Errorf("discovery: %w", err)
 		}
 		a.disc = disc
 
+		grpcPort, _ := a.Config.TransportConfig["grpcPort"].(string)
+		if grpcPort == "" {
+			grpcPort = "8901"
+		}
 		self := discovery.ServiceInstance{
 			Service:  a.Info.Service,
 			Instance: a.Info.Instance,
-			GRPCAddr: a.Config.AdvertiseAddr + ":" + a.Config.GRPCPort,
+			GRPCAddr: a.Config.AdvertiseAddr + ":" + grpcPort,
 			AgentURL: a.selfURL(),
 		}
 		if err := disc.Register(ctx, self); err != nil {

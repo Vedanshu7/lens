@@ -100,9 +100,10 @@ observer:
     #     format: json
 
 agent:
+  targetURL: "http://app:8080"   # HTTP base URL of the service this sidecar is attached to
   port: "8900"
   bindAddr: "0.0.0.0"
-  token: ${LENS_TOKEN}
+  token: ${LENS_TOKEN}           # keep secrets in env, not in this file
   cooldownMs: 1000
   logLevel: info
   replay:

@@ -1,0 +1,36 @@
+# Lens sidecar — docker-compose reference
+#
+# Copy the "lens" service block into your own docker-compose.yml.
+# The only file you need to create is lens.yaml (copy from config/lens.example.yaml).
+#
+# lens.yaml is mounted read-only at /etc/lens/lens.yaml inside the container.
+# Set LENS_TOKEN in your shell or a .env file; everything else goes in lens.yaml.
+
+services:
+  lens:
+    image: ghcr.io/vedanshu7/lens:full
+    volumes:
+      - ./lens.yaml:/etc/lens/lens.yaml:ro
+    ports:
+      - "8900:8900"
+    environment:
+      LENS_TOKEN: ${LENS_TOKEN:-}
+    restart: unless-stopped
+    # Uncomment and adjust if lens needs to reach your app service by name:
+    # depends_on:
+    #   app:
+    #     condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Your application service — set agent.targetURL in lens.yaml to point here.
+  # Example:
+  #
+  # app:
+  #   image: your-org/your-app:latest
+  #   ports:
+  #     - "8080:8080"
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+  #     interval: 10s
+  #     retries: 3
+  # ---------------------------------------------------------------------------

@@ -14,10 +14,7 @@ import (
 
 	"github.com/vedanshu/lens/internal/agent"
 
-	// Default providers — each registers itself via init().
-	// Swap or extend by adding or removing blank imports here.
-	_ "github.com/vedanshu/lens/internal/discovery/memberlist"
-	_ "github.com/vedanshu/lens/internal/discovery/static"
+	// Persistence and observability providers are always compiled in.
 	_ "github.com/vedanshu/lens/internal/observability/noop"
 	_ "github.com/vedanshu/lens/internal/observability/prometheus"
 	_ "github.com/vedanshu/lens/internal/observability/sql"
@@ -25,14 +22,9 @@ import (
 	_ "github.com/vedanshu/lens/internal/observability/webhook"
 	_ "github.com/vedanshu/lens/internal/persistence/memory"
 	_ "github.com/vedanshu/lens/internal/persistence/redis"
-	_ "github.com/vedanshu/lens/internal/transport/grpc"
-	_ "github.com/vedanshu/lens/internal/transport/nats"
-	// Optional — compile with the matching build tag to enable:
-	// _ "github.com/vedanshu/lens/internal/observability/otel"       // -tags lens_otel
-	// _ "github.com/vedanshu/lens/internal/transport/zeromq"         // -tags lens_zmq
-	// _ "github.com/vedanshu/lens/internal/transport/redisstreams"   // -tags lens_redisstreams
-	// _ "github.com/vedanshu/lens/internal/transport/kafka"          // -tags lens_kafka
-	// _ "github.com/vedanshu/lens/internal/discovery/dnssrv"        // -tags lens_dnssrv
+	// Transport and discovery providers are compiled in via build tags.
+	// Each providers_<name>.go file in this package carries the matching tag.
+	// Example: go build -tags "lens_grpc lens_memberlist" .
 )
 
 func main() {

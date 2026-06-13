@@ -76,6 +76,14 @@ func Register(name string, f Factory) {
 	registry[name] = f
 }
 
+// Has reports whether name has been registered as a discovery provider.
+func Has(name string) bool {
+	mu.RLock()
+	_, ok := registry[name]
+	mu.RUnlock()
+	return ok
+}
+
 // New constructs the named discovery provider. backend is passed to the
 // provider factory for bootstrap seed access. Returns an error if name is
 // not registered.

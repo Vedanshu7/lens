@@ -71,6 +71,14 @@ func Register(name string, f Factory) {
 	registry[name] = f
 }
 
+// Has reports whether name has been registered as a transport provider.
+func Has(name string) bool {
+	mu.RLock()
+	_, ok := registry[name]
+	mu.RUnlock()
+	return ok
+}
+
 // New constructs the named transport provider with host and cfg.
 // Returns an error if name is not registered.
 func New(host TransportHost, name string, cfg map[string]any) (Transport, error) {

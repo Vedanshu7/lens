@@ -6,6 +6,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/vedanshu/lens/config"
 	"github.com/vedanshu/lens/internal/discovery"
 	"github.com/vedanshu/lens/internal/observability"
 	"github.com/vedanshu/lens/internal/persistence"
@@ -24,7 +26,9 @@ import (
 )
 
 // Config holds all runtime configuration for the Lens sidecar.
-// Values are read from LENS_* environment variables by LoadConfig.
+// It is populated from lens.yaml when present; LENS_* env vars serve as
+// fallbacks for any field not set in the file. Secrets (token, passwords)
+// are always sourced from env vars even when a config file is present.
 type Config struct {
 	// TargetURL is the base HTTP URL of the service this sidecar is attached to.
 	TargetURL string
@@ -32,6 +36,8 @@ type Config struct {
 	Port string
 	// BindAddr is the local address the HTTP server binds to.
 	BindAddr string
+	// AdvertiseAddr is the IP peers use to reach this pod.
+	AdvertiseAddr string
 	// Token is the shared secret for request authentication. Empty disables auth.
 	Token string
 	// CooldownMS is the minimum milliseconds between invalidations for the same service.
@@ -43,29 +49,20 @@ type Config struct {
 	// LogLevel is the minimum log level ("debug", "info", "warn", "error").
 	LogLevel string
 
-	// Transport names the transport provider ("grpc" or "nats").
+	// Transport names the active transport provider (e.g. "grpc", "nats", "kafka").
 	Transport string
-	// Persistence names the persistence provider ("redis" or "memory").
+	// TransportConfig is passed verbatim to the transport factory.
+	TransportConfig map[string]any
+
+	// Persistence names the active persistence provider (e.g. "redis", "memory").
 	Persistence string
-	// Discovery names the discovery provider ("memberlist" or "static").
+	// PersistenceConfig is passed verbatim to the persistence factory.
+	PersistenceConfig map[string]any
+
+	// Discovery names the active discovery provider (e.g. "memberlist", "static", "dnssrv").
 	Discovery string
-
-	// RedisAddr is the Redis server address in "host:port" form.
-	RedisAddr string
-	// RedisDB is the Redis database index.
-	RedisDB int
-
-	// GRPCPort is the port the gRPC server listens on.
-	GRPCPort string
-	// NATSUrl is the NATS server URL.
-	NATSUrl string
-
-	// GossipPort is the UDP port used by the memberlist gossip protocol.
-	GossipPort int
-	// AdvertiseAddr is the IP peers use to reach this pod.
-	// Defaults to the auto-detected outbound IP so a 0.0.0.0 bind never leaks
-	// as a peer address. Override with LENS_ADVERTISE_ADDR when behind NAT.
-	AdvertiseAddr string
+	// DiscoveryConfig is passed verbatim to the discovery factory.
+	DiscoveryConfig map[string]any
 
 	// ObserverEnabled controls whether the observability subsystem is active.
 	ObserverEnabled bool
@@ -79,32 +76,132 @@ type ObserverProviderConfig struct {
 	Config map[string]any
 }
 
-// LoadConfig reads configuration from LENS_* environment variables and returns
-// a Config populated with defaults for any unset variables.
+// configPaths lists the locations searched for lens.yaml in order.
+var configPaths = []string{"./lens.yaml", "/etc/lens/lens.yaml"}
+
+// LoadConfig builds a Config by first applying LENS_* env var defaults, then
+// overlaying any lens.yaml found in the current directory or /etc/lens/.
 func LoadConfig() Config {
 	db, _ := strconv.Atoi(envOr("LENS_REDIS_DB", "0"))
 	cooldown, _ := strconv.Atoi(envOr("LENS_COOLDOWN_MS", "1000"))
 	replayHours, _ := strconv.Atoi(envOr("LENS_REPLAY_WINDOW_HOURS", "24"))
 	gossipPort, _ := strconv.Atoi(envOr("LENS_GOSSIP_PORT", "7946"))
-	return Config{
+
+	cfg := Config{
 		TargetURL:         envOr("LENS_TARGET_URL", "http://localhost:8080"),
 		Port:              envOr("LENS_PORT", "8900"),
-		RedisAddr:         envOr("LENS_REDIS_ADDR", "localhost:6379"),
-		RedisDB:           db,
 		BindAddr:          envOr("LENS_BIND_ADDR", "127.0.0.1"),
+		AdvertiseAddr:     envOr("LENS_ADVERTISE_ADDR", detectAdvertiseAddr()),
 		Token:             os.Getenv("LENS_TOKEN"),
 		CooldownMS:        cooldown,
 		ReplayEnabled:     envOr("LENS_REPLAY_ENABLED", "true") != "false",
 		ReplayWindowHours: replayHours,
 		LogLevel:          envOr("LENS_LOG_LEVEL", "info"),
-		Transport:         envOr("LENS_TRANSPORT", "grpc"),
+		Transport:         envOr("LENS_TRANSPORT", ""),
 		Persistence:       envOr("LENS_PERSISTENCE", "redis"),
-		Discovery:         envOr("LENS_DISCOVERY", "memberlist"),
-		GRPCPort:          envOr("LENS_GRPC_PORT", "8901"),
-		GossipPort:        gossipPort,
-		NATSUrl:           envOr("LENS_NATS_URL", "nats://localhost:4222"),
-		AdvertiseAddr:     envOr("LENS_ADVERTISE_ADDR", detectAdvertiseAddr()),
+		Discovery:         envOr("LENS_DISCOVERY", ""),
+		TransportConfig:   map[string]any{"grpcPort": envOr("LENS_GRPC_PORT", "8901"), "natsUrl": envOr("LENS_NATS_URL", "nats://localhost:4222")},
+		PersistenceConfig: map[string]any{"addr": envOr("LENS_REDIS_ADDR", "localhost:6379"), "db": db},
+		DiscoveryConfig:   map[string]any{"bindPort": gossipPort},
 	}
+
+	for _, path := range configPaths {
+		if _, err := os.Stat(path); err == nil {
+			f, err := config.Load(path)
+			if err != nil {
+				slog.Warn("lens: could not parse config file, using env vars", "path", path, "err", err)
+				break
+			}
+			applyFile(&cfg, f)
+			slog.Info("lens: loaded config", "path", path)
+			break
+		}
+	}
+
+	return cfg
+}
+
+// applyFile overlays the parsed YAML file onto cfg. YAML wins for every field
+// it sets explicitly; env var values already in cfg remain for unset fields.
+// Token is always sourced from env to keep secrets out of the config file.
+func applyFile(cfg *Config, f config.File) {
+	if f.Agent.TargetURL != "" {
+		cfg.TargetURL = f.Agent.TargetURL
+	}
+	if f.Agent.Port != "" {
+		cfg.Port = f.Agent.Port
+	}
+	if f.Agent.BindAddr != "" {
+		cfg.BindAddr = f.Agent.BindAddr
+	}
+	if f.Agent.AdvertiseAddr != "" {
+		cfg.AdvertiseAddr = f.Agent.AdvertiseAddr
+	}
+	if f.Agent.CooldownMs != 0 {
+		cfg.CooldownMS = f.Agent.CooldownMs
+	}
+	if f.Agent.LogLevel != "" {
+		cfg.LogLevel = f.Agent.LogLevel
+	}
+	if f.Agent.Replay.WindowHours != 0 {
+		cfg.ReplayWindowHours = f.Agent.Replay.WindowHours
+	}
+	cfg.ReplayEnabled = f.Agent.Replay.Enabled
+
+	if f.Transport.Provider != "" {
+		cfg.Transport = f.Transport.Provider
+	}
+	if len(f.Transport.Config) > 0 {
+		cfg.TransportConfig = f.Transport.Config
+	}
+
+	if f.Persistence.Provider != "" {
+		cfg.Persistence = f.Persistence.Provider
+	}
+	if len(f.Persistence.Config) > 0 {
+		cfg.PersistenceConfig = f.Persistence.Config
+	}
+
+	if f.Discovery.Provider != "" {
+		cfg.Discovery = f.Discovery.Provider
+	}
+	if len(f.Discovery.Config) > 0 {
+		cfg.DiscoveryConfig = f.Discovery.Config
+	}
+
+	cfg.ObserverEnabled = f.Observer.Enabled
+	if len(f.Observer.Providers) > 0 {
+		cfg.ObserverProviders = make([]ObserverProviderConfig, len(f.Observer.Providers))
+		for i, p := range f.Observer.Providers {
+			cfg.ObserverProviders[i] = ObserverProviderConfig{Name: p.Provider, Config: p.Config}
+		}
+	}
+}
+
+// validateConfig checks that the configured provider names are compiled in.
+// Returns a clear error so the user knows exactly which build tag is missing.
+func validateConfig(cfg Config) error {
+	if cfg.Transport == "" {
+		return fmt.Errorf("transport provider not set: add 'transport.provider' to lens.yaml or set LENS_TRANSPORT")
+	}
+	if !transport.Has(cfg.Transport) {
+		return fmt.Errorf("transport %q is not compiled in; rebuild with -tags lens_%s", cfg.Transport, cfg.Transport)
+	}
+	if !persistence.Has(cfg.Persistence) {
+		return fmt.Errorf("persistence %q is not compiled in", cfg.Persistence)
+	}
+	if cfg.Discovery == "" {
+		return fmt.Errorf("discovery provider not set: add 'discovery.provider' to lens.yaml or set LENS_DISCOVERY")
+	}
+	if !discovery.Has(cfg.Discovery) {
+		return fmt.Errorf("discovery %q is not compiled in; rebuild with -tags lens_%s", cfg.Discovery, cfg.Discovery)
+	}
+	for _, p := range cfg.ObserverProviders {
+		if !observability.Has(p.Name) {
+			return fmt.Errorf("observer %q is not compiled in", p.Name)
+		}
+	}
+	return nil
 }
 
 // detectAdvertiseAddr returns this node's primary outbound IP by opening a UDP
@@ -173,24 +270,22 @@ type Agent struct {
 	live        atomic.Bool
 	dialCancel  context.CancelFunc
 	reconnectCh chan struct{}
-
-	transportCfg   map[string]any
-	discoveryCfg   map[string]any
-	persistenceCfg map[string]any
 }
 
 // New constructs an Agent from cfg. Persistence is initialised immediately;
 // transport and discovery are deferred until after the target service identity
-// is known (see dial).
+// is known (see dial). Panics with a clear message if a required provider is
+// not compiled in.
 func New(cfg Config) *Agent {
-	persistenceCfg := map[string]any{
-		"addr": cfg.RedisAddr,
-		"db":   cfg.RedisDB,
+	if err := validateConfig(cfg); err != nil {
+		slog.Error("invalid configuration", "err", err)
+		os.Exit(1)
 	}
-	store, err := persistence.New(cfg.Persistence, persistenceCfg)
+
+	store, err := persistence.New(cfg.Persistence, cfg.PersistenceConfig)
 	if err != nil {
 		slog.Error("failed to init persistence", "provider", cfg.Persistence, "err", err)
-		panic(err)
+		os.Exit(1)
 	}
 
 	var observers []observability.Observer
@@ -213,14 +308,6 @@ func New(cfg Config) *Agent {
 		ProxyHTTP: &http.Client{Timeout: 2 * time.Second},
 		Metrics:   newMetrics(),
 		Throttle:  newThrottle(cfg.CooldownMS),
-		transportCfg: map[string]any{
-			"grpcPort": cfg.GRPCPort,
-			"natsUrl":  cfg.NATSUrl,
-		},
-		discoveryCfg: map[string]any{
-			"bindPort": cfg.GossipPort,
-		},
-		persistenceCfg: persistenceCfg,
 	}
 }
 
