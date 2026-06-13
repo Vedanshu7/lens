@@ -1,126 +1,165 @@
 # Contributing to Lens
 
-Thank you for taking the time to contribute. This document covers the development setup, code standards, and submission process.
+Thank you for contributing. Please read this fully before opening a PR.
+
+## Hard Requirements
+
+| Requirement | Detail |
+|---|---|
+| **Fork the repo** | Do not push branches directly to `Vedanshu7/lens` |
+| **Branch naming** | `feat/`, `fix/`, `docs/`, `refactor/`, `test/`, or `chore/` prefix |
+| **At least 1 test** | Every code change needs a test — no exceptions |
+| **Isolated scope** | One PR = one problem. No bundling unrelated changes |
+| **All CI must pass** | `build`, `test`, `lint`, `tidy`, `sidecar`, `dashboard` — all green |
 
 ---
 
-## Development setup
+## Workflow
+
+### 1. Open an issue first
+
+Discuss the approach before writing code. PRs without a linked issue may be closed.
+
+### 2. Fork and clone
 
 ```bash
-git clone https://github.com/Vedanshu7/lens.git
+git clone https://github.com/<your-username>/lens.git
 cd lens
-go mod download
 ```
 
-No external tools are required for the core sidecar. To work on the dashboard:
+### 3. Create a branch — never work on `main`
 
 ```bash
-cd dashboard
-npm install
-npm run dev
+git checkout -b feat/consul-discovery
+git checkout -b fix/memberlist-rejoin
+git checkout -b docs/all-nats-stack
 ```
+
+**Branch naming:**
+
+| Type | Pattern | Example |
+|---|---|---|
+| Feature | `feat/<description>` | `feat/consul-discovery` |
+| Bug fix | `fix/<description>` | `fix/nats-reconnect` |
+| Docs | `docs/<topic>` | `docs/kubernetes-deploy` |
+| Refactor | `refactor/<area>` | `refactor/discovery-interface` |
+| Test | `test/<area>` | `test/persistence-backend` |
+
+### 4. Run all checks locally
+
+```bash
+go build -tags "lens_grpc lens_memberlist" ./...
+go test  -tags "lens_grpc lens_memberlist" -race ./...
+go vet   ./...
+go mod tidy
+```
+
+### 5. Open a pull request
+
+Push to your fork and open a PR against `Vedanshu7/lens:main`. Fill in the PR template fully, including CI run links.
 
 ---
 
-## Running tests
+## Testing Requirements
 
-```bash
-go test ./...
-```
-
-To build without Redis or NATS (uses in-memory providers):
-
-```bash
-LENS_PERSISTENCE=memory LENS_DISCOVERY=static go run .
-```
+- Every PR must include at least one test. No exceptions.
+- Tests live alongside the package they test (`internal/discovery/nats/nats_test.go`).
+- Use table-driven tests where possible.
+- Do not make real network calls in tests — use mock servers or in-process listeners.
+- Run with the race detector: `go test -race ./...`
 
 ---
 
-## Code style
+## Adding a New Provider
 
-### Go
+Providers are the most common contribution. Each layer has a clean interface — implement it and register in `init()`.
 
-All Go source files must follow these rules. They are enforced during review.
+### File structure
 
-**Formatting.** Run `gofmt` and `goimports` before every commit. The CI build will fail on unformatted files.
-
-**Package doc comment.** Every package must have a doc comment immediately above the `package` declaration, describing the package's purpose in one or two sentences.
-
-**Exported symbol doc comments.** Every exported function, type, constant, variable, and interface method must have a doc comment that starts with the symbol name (Go godoc convention). The comment must describe what the symbol is or does, including any non-obvious parameters or return values.
-
-**Comments end with a period.** Every doc comment sentence ends with a period. Sentence fragments are not permitted.
-
-**No inline comments.** Comments must appear on their own line above the relevant code. Trailing end-of-line comments (`x = 1 // set x`) are not permitted.
-
-**Single point of return.** Each function has at most one `return` statement at the bottom, except for immediate guard clauses at the very top of a function that return before any meaningful work begins.
-
-**DRY.** Shared logic belongs in a shared package. Before adding a helper function, check whether an equivalent already exists in the codebase.
-
-**No noise comments.** Do not write comments that restate what the code already says. Describe invariants, constraints, side-effects, or non-obvious behaviour instead.
-
-**Canonical example:**
+```
+internal/<layer>/<providername>/
+└── <providername>.go     # interface implementation + init() registration
+```
 
 ```go
-// Package store defines the key naming conventions used across all persistence backends.
-package store
+// providers_<name>.go at repo root
+//go:build lens_<name>
 
-// CheckpointKey returns the key that stores the last-seen timestamp for an instance.
-// Used by replayMissed to determine which log entries arrived while the instance was offline.
-func CheckpointKey(service, instance string) string {
-    return fmt.Sprintf("%s:checkpoint:%s:%s", KeyPrefix, service, instance)
-}
+package main
+
+import _ "github.com/vedanshu/lens/internal/<layer>/<providername>"
 ```
 
-### TypeScript (dashboard)
+### Layer interfaces
 
-Follow the existing patterns in `dashboard/src`. Use named exports, keep components small, and avoid inline styles.
+| Layer | Interface | Register call |
+|---|---|---|
+| Transport | `transport.Transport` | `transport.Register("name", factory)` |
+| Discovery | `discovery.Resolver` | `discovery.Register("name", factory)` |
+| Persistence | `persistence.Backend` | `persistence.Register("name", factory)` |
+| Observability | `observability.Observer` | `observability.Register("name", factory)` |
 
----
+### Provider checklist
 
-## Adding a new provider
-
-Lens uses a registry pattern for all pluggable subsystems (transport, persistence, discovery, observability).
-
-1. Create the package under the appropriate directory (e.g. `internal/transport/kafka/kafka.go`).
-2. Register the provider in `init()`:
-   ```go
-   func init() {
-       transport.Register("kafka", func(host transport.TransportHost, cfg map[string]any) (transport.Transport, error) {
-           // ...
-       })
-   }
-   ```
-3. Add a blank import in `main.go`.
-4. Document the provider in `config/lens.example.yaml`.
-5. Add the provider to the relevant table in `README.md`.
-
-For optional providers that add heavy dependencies, use a build tag (`//go:build lens_kafka`) and document the tag in the README.
+- [ ] Build tag: `//go:build lens_<name>` at top of implementation file
+- [ ] `init()` calls the appropriate `Register()` function
+- [ ] `providers_<name>.go` created at repo root with matching build tag
+- [ ] At least one test
+- [ ] README provider table updated with name, build tag, and "best for" description
+- [ ] `lens.yaml` config options documented if the provider accepts config
 
 ---
 
-## Submitting a pull request
+## Code Style
 
-**Branch naming:** `feat/<name>`, `fix/<name>`, or `docs/<name>`.
+- Run `gofmt` before committing.
+- Follow standard Go idioms — [Effective Go](https://go.dev/doc/effective_go) is the reference.
+- No comments that explain what the code does. Only comments explaining why — hidden constraints, workarounds, non-obvious invariants.
+- Keep interfaces stable. Think carefully before adding methods to any layer interface.
 
-**One logical change per PR.** Refactoring and feature work belong in separate PRs.
+---
 
-**PR description.** Explain the *why*: what problem this change solves and why this approach was chosen. The diff explains the *what*.
+## Commit Message Format
 
-**Before opening the PR:**
+[Conventional Commits](https://www.conventionalcommits.org/):
 
-```bash
-go build ./...
-go vet ./...
-gofmt -l .          # must print nothing
+```
+<type>(<scope>): <short summary>
+```
+
+**Types:** `feat` `fix` `docs` `refactor` `test` `chore`
+
+```
+feat(discovery): add Consul provider
+fix(nats): handle reconnect during broadcast
+docs: document all-NATS stack configuration
+test(persistence): add Redis backend integration test
 ```
 
 ---
 
-## Reporting bugs
+## CI Checks
 
-Open an issue on GitHub with:
+All checks must be green before a review will be assigned:
 
-- The Lens version or commit hash.
-- The provider combination in use (transport, persistence, discovery).
-- A minimal reproduction case.
-- The full log output with `LENS_LOG_LEVEL=debug`.
+| Check | What it runs |
+|---|---|
+| `Build & Vet (1.25)` | `go build` + `go vet` with both gRPC and NATS build tag sets |
+| `Test` | `go test -race ./...` |
+| `Lint` | `golangci-lint run` |
+| `go mod tidy` | Fails if `go.mod` / `go.sum` are not clean |
+| `sidecar` | Multi-arch Docker build of the sidecar binary |
+| `dashboard` | Multi-arch Docker build of the React dashboard |
+
+---
+
+## Review Process
+
+1. CI must be fully green.
+2. At least one maintainer approval is required.
+3. Stale reviews are dismissed when new commits are pushed.
+4. All review conversations must be resolved before merge.
+
+---
+
+Questions? Open a [Discussion](https://github.com/Vedanshu7/lens/discussions) or comment in the issue thread.

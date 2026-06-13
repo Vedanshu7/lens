@@ -1,205 +1,54 @@
 # Lens
 
-A reusable Go sidecar framework with pluggable transport, discovery, persistence, and observability. Fork it, replace the domain logic, and ship.
+A Go sidecar framework with four independently swappable layers: **transport**, **discovery**, **persistence**, and **observability**.
 
-Building a sidecar means solving the same four infrastructure problems every time: how do pods find each other, how do they communicate, where does shared state live, and how do you observe what is happening across the fleet. Most teams solve these ad-hoc and repeat the work for every new sidecar they build.
-
-Lens solves them once as a single, well-tested codebase. Every layer is a named provider behind a clean interface. You fork the repo, replace the HTTP handlers and broadcast logic with your own domain behaviour, and the entire infrastructure stack comes with it. The included cache-visibility implementation demonstrates all four layers working together end to end, but that is the reference, not the limit.
+Pick any provider for each layer. Combine them freely. Switch at config time with no code changes.
 
 ---
 
-## What is already solved
+## Providers
 
-**Peer communication.** How pods find and talk to each other without a service mesh. Providers: gRPC (direct, zero broker), NATS (broker fan-out), Kafka (high-throughput), Redis Streams (reuse existing Redis). All implement the same `Transport` interface so nothing else changes when you swap.
+### Transport — how pods broadcast to each other
 
-**Peer discovery.** How the live pod list stays current. Providers: memberlist (gossip, zero infra), static (fixed seed list), Consul (service catalog), Kubernetes (watches EndpointSlices natively). All emit the same join/leave event stream.
-
-**Shared state.** Replay logs, audit trails, and cross-pod metadata. Providers: Redis, Valkey (Redis-compatible, higher throughput), or in-memory for local dev. All implement the same `Backend` interface.
-
-**Observability.** Structured events at every meaningful moment (invalidations, fetches, peer joins, dead pods). Six providers available, and multiple can run simultaneously.
-
----
-
-## Providers per layer
-
-### Transport
-
-| Provider | `LENS_TRANSPORT` | When to use |
+| Provider | Build tag | Best for |
 |---|---|---|
-| gRPC | `grpc` | Default. Direct pod-to-pod, lowest latency, no broker required. |
-| NATS | `nats` | Pods behind NAT or in separate subnets, or a broker is already in place. |
-| Kafka | `kafka` | High-throughput fan-out, Kafka already in your stack. Build tag: `lens_kafka`. |
-| Redis Streams | `redis-streams` | Reuses your existing Redis instance, zero extra infrastructure. |
+| `grpc` | `lens_grpc` | Direct pod-to-pod, lowest latency, no broker required |
+| `nats` | `lens_nats` | Broker fan-out, pods behind NAT or in separate subnets |
+| `kafka` | `lens_kafka` | High-throughput fan-out, Kafka already in stack |
+| `zeromq` | `lens_zmq` | Brokerless pub/sub, minimal footprint |
+| `redis-streams` | `lens_redisstreams` | Reuses an existing Redis instance, zero extra infra |
 
-### Discovery
+### Discovery — how pods find each other
 
-| Provider | `LENS_DISCOVERY` | When to use |
+| Provider | Build tag | Best for |
 |---|---|---|
-| Memberlist | `memberlist` | Default. Gossip-based, works on any network that allows UDP between pods. |
-| Static | `static` | Fixed deployments where the pod list is known and gossip is not available. |
-| Consul | `consul` | Consul service catalog already in use for service registration. Build tag: `lens_consul`. |
-| Kubernetes | `kubernetes` | Native K8s deployments. Watches EndpointSlices directly. Build tag: `lens_k8s`. |
+| `memberlist` | `lens_memberlist` | Gossip over UDP, zero infrastructure |
+| `nats` | `lens_natsdiscovery` | Uses the same broker already running for transport |
+| `dnssrv` | `lens_dnssrv` | Kubernetes headless services, Consul DNS |
+| `static` | `lens_static` | Fixed known peer list, no infrastructure |
 
-### Persistence
+### Persistence — replay log, audit trail, shared metadata
 
-| Provider | `LENS_PERSISTENCE` | When to use |
+| Provider | Build tag | Best for |
 |---|---|---|
-| Redis | `redis` | Default. Production: durable replay log, audit trail, shared metadata. |
-| Valkey | `valkey` | Redis-compatible, higher throughput. Drop-in replacement. Build tag: `lens_valkey`. |
-| In-memory | `memory` | Local dev and tests. Zero infrastructure. State is lost on restart. |
+| `redis` | _(always compiled)_ | Production default, durable, widely available |
+| `natskv` | `lens_natskv` | All-NATS stack, uses JetStream KV — no Redis needed |
+| `memory` | _(always compiled)_ | Local dev and tests, zero infrastructure |
 
-### Observability
+### Observability — multiple providers can run simultaneously
 
-Multiple providers can be active at the same time.
-
-| Provider | Config name | What it does |
+| Provider | Build tag | What it does |
 |---|---|---|
-| SQL | `sql` | Powers the built-in Lens dashboard. You provide a SQLite, PostgreSQL, or MySQL instance. Lens writes structured events to it and the dashboard UI queries it via `/api/obs/*`. |
-| Prometheus | `prometheus` | Exposes a `/metrics` endpoint for Prometheus scraping. |
-| OpenTelemetry | `otel` | Emits traces and metrics via OTLP. Compile with `-tags lens_otel`. |
-| Webhook | `webhook` | POSTs a JSON event payload to a configurable URL on every event. |
-| Stdout | `stdout` | Writes JSON events to stdout. Feeds into any log aggregation pipeline. |
-| Noop | `noop` | Discards all events. Default when no provider is configured. |
+| `sql` | _(always compiled)_ | Structured events to SQLite, PostgreSQL, or MySQL. Powers the dashboard. |
+| `prometheus` | _(always compiled)_ | Scrape endpoint at `/metrics` |
+| `otel` | `lens_otel` | OTLP traces and metrics to any OpenTelemetry collector |
+| `webhook` | _(always compiled)_ | HTTP POST on every event to a configurable URL |
+| `stdout` | _(always compiled)_ | JSON lines to stdout, feeds any log aggregation pipeline |
+| `noop` | _(always compiled)_ | Discard all events (default when no provider is configured) |
 
 ---
 
-## Using Lens as your own sidecar
-
-The framework and the domain logic have a clean boundary. The grey boxes below are the infrastructure layer you keep as-is. The white boxes are what you replace with your own behaviour.
-
-```mermaid
-graph TD
-    subgraph Framework keep as-is
-        T[Transport\ngRPC / NATS]
-        D[Discovery\nmemberlist / static]
-        P[Persistence\nRedis / memory]
-        O[Observability\nSQL / Prometheus / OTel / ...]
-        Cfg[Config loader\nenv + YAML]
-        Replay[Replay log + audit trail]
-    end
-
-    subgraph Your domain logic replace these
-        Routes[HTTP handlers\ninternal/agent/routes.go]
-        Broadcast[Broadcast logic\ninternal/agent/broadcast.go]
-        AppContract[App endpoints\n/info  /your-action  /your-query]
-    end
-
-    Routes --> T
-    Routes --> D
-    Routes --> P
-    Routes --> O
-    Broadcast --> T
-    Broadcast --> P
-```
-
-**Steps to fork:**
-
-1. Fork the repo on GitHub.
-2. Replace the HTTP handlers in `internal/agent/routes.go` with your own endpoints and response shapes.
-3. Replace the broadcast logic in `internal/agent/broadcast.go` with your own payload structure and action.
-4. Expose three endpoints on your target app: an identity endpoint, an action endpoint (what the sidecar calls on each pod), and optionally a query endpoint (for peer-to-peer fetch).
-5. Pick your providers with environment variables. Everything else is wired automatically.
-
-Adding a custom provider for any layer takes three steps:
-
-```go
-// Step 1: implement the interface and register in init()
-func init() {
-    transport.Register("kafka", func(host transport.TransportHost, cfg map[string]any) (transport.Transport, error) {
-        return newKafkaTransport(host, cfg)
-    })
-}
-```
-
-```go
-// Step 2: blank import in main.go
-import _ "github.com/Vedanshu7/lens/internal/transport/kafka"
-```
-
-```bash
-# Step 3: switch to it with one env var
-LENS_TRANSPORT=kafka go run .
-```
-
-No changes anywhere else in the codebase.
-
----
-
-## Swap any layer without changing code
-
-Every layer switches with a single environment variable. The binary does not change.
-
-| Layer | Default | Alternatives | How to switch |
-|---|---|---|---|
-| Transport | `grpc` | `nats`, `kafka`, `redis-streams` | `LENS_TRANSPORT=nats` |
-| Persistence | `redis` | `valkey`, `memory` | `LENS_PERSISTENCE=memory` |
-| Discovery | `memberlist` | `static`, `consul`, `kubernetes` | `LENS_DISCOVERY=static` |
-| Observability | `noop` | `sql`, `prometheus`, `otel`, `webhook`, `stdout` | config file |
-
-**Local dev with zero external dependencies:**
-
-```bash
-LENS_TRANSPORT=grpc \
-LENS_PERSISTENCE=memory \
-LENS_DISCOVERY=static \
-go run .
-```
-
-**Production with NATS and OpenTelemetry:**
-
-```bash
-LENS_TRANSPORT=nats \
-LENS_NATS_URL=nats://broker:4222 \
-LENS_PERSISTENCE=redis \
-LENS_REDIS_ADDR=redis:6379 \
-LENS_DISCOVERY=memberlist \
-go run .
-```
-
-Same binary, same business logic, entirely different infrastructure underneath.
-
----
-
-## Architecture
-
-How the framework runs in production. Each pod runs a Lens sidecar. Sidecars discover each other via gossip or a static list and coordinate through Redis. Any API client or dashboard talks to one sidecar; that sidecar routes to the rest.
-
-```mermaid
-graph LR
-    subgraph Pod A
-        AppA[Your App A\nin-memory cache]
-        SA[Lens Sidecar A\n:8900]
-        AppA <-->|localhost HTTP| SA
-    end
-
-    subgraph Pod B
-        AppB[Your App B\nin-memory cache]
-        SB[Lens Sidecar B\n:8900]
-        AppB <-->|localhost HTTP| SB
-    end
-
-    subgraph Pod C
-        AppC[Your App C\nin-memory cache]
-        SC[Lens Sidecar C\n:8900]
-        AppC <-->|localhost HTTP| SC
-    end
-
-    Redis[(Redis\ncoordination)]
-
-    SA <-->|gRPC / NATS| SB
-    SA <-->|gRPC / NATS| SC
-    SB <-->|gRPC / NATS| SC
-
-    SA <-->|discovery\nreplay log\naudit log| Redis
-    SB <--> Redis
-    SC <--> Redis
-
-    Dashboard[Dashboard / API client] -->|HTTP| SA
-```
-
----
-
-## Provider system
+## Provider map
 
 ```mermaid
 graph TD
@@ -210,253 +59,305 @@ graph TD
     Agent --> Discovery
     Agent --> Observability
 
-    Transport --> gRPC[gRPC\ndirect pod-to-pod]
-    Transport --> NATS[NATS\npub/sub broker]
+    Transport --> grpc[grpc\ndirect pod-to-pod]
+    Transport --> nats_t[nats\nbroker fan-out]
+    Transport --> kafka[kafka\nhigh-throughput]
+    Transport --> zeromq[zeromq\nbrokerless]
+    Transport --> redisstreams[redis-streams\nreuse existing instance]
 
-    Persistence --> Redis[Redis]
-    Persistence --> Memory[In-memory\ndev/test only]
+    Persistence --> redis_p[redis\ndurable default]
+    Persistence --> natskv[natskv\nJetStream KV]
+    Persistence --> memory[memory\ndev / test]
 
-    Discovery --> Memberlist[Memberlist\ngossip]
-    Discovery --> Static[Static\nfixed peer list]
+    Discovery --> memberlist[memberlist\ngossip UDP]
+    Discovery --> nats_d[nats\nsame broker as transport]
+    Discovery --> dnssrv[dnssrv\nDNS SRV / K8s headless]
+    Discovery --> static_d[static\nfixed seed list]
 
-    Observability --> SQL[SQL\nSQLite / PostgreSQL / MySQL]
-    Observability --> Prometheus[Prometheus\n/metrics]
-    Observability --> OTel[OpenTelemetry\n-tags lens_otel]
-    Observability --> Webhook[Webhook\nHTTP POST events]
-    Observability --> Stdout[Stdout\nJSON log lines]
-    Observability --> Noop[Noop\ndiscard]
+    Observability --> sql[sql\nSQLite / PostgreSQL / MySQL]
+    Observability --> prometheus[prometheus\n/metrics]
+    Observability --> otel[otel\nOTLP traces + metrics]
+    Observability --> webhook[webhook\nHTTP POST events]
+    Observability --> stdout[stdout\nJSON log lines]
+    Observability --> noop[noop\ndiscard]
 ```
 
 ---
 
-## Reference implementation: cache visibility
+## Example stacks
 
-The following describes how Lens uses the framework for its built-in cache-visibility use case. Your implementation follows the same startup, broadcast, and fetch patterns with your own payloads and app endpoints.
+The same codebase, different build tags, different config — no logic changes.
 
-### Startup sequence
+### Minimal (zero external infrastructure)
 
-```mermaid
-sequenceDiagram
-    participant S as Lens Sidecar
-    participant R as Redis
-    participant A as Your App
-    participant D as Discovery (memberlist)
-    participant P as Peers
-
-    S->>R: Ping: verify persistence is reachable
-    R-->>S: OK
-
-    S->>A: GET /internal/lens/info
-    A-->>S: { "service": "rider-app", "instance": "pod-xyz" }
-
-    S->>S: Init gRPC / NATS transport server
-    S->>D: Register self (service, instance, gRPC addr, agent URL)
-    D->>P: Gossip announce
-
-    S->>D: Watch: subscribe to join/leave events
-    D-->>S: Stream of peer events, peer map updated
-
-    S->>R: Read replay log (last 24 h)
-    R-->>S: Missed invalidation entries since last checkpoint
-    S->>A: POST /internal/lens/invalidate (for each missed entry)
-
-    S->>S: Mark live: start serving /api/* requests
+```bash
+go build -tags "lens_grpc lens_memberlist" -o lens .
 ```
 
-### Broadcast flow
-
-```mermaid
-sequenceDiagram
-    participant DB as Dashboard
-    participant SA as Sidecar A
-    participant T as Transport (gRPC/NATS)
-    participant SB as Sidecar B
-    participant SC as Sidecar C
-    participant AppA as App A
-    participant AppB as App B
-    participant AppC as App C
-    participant R as Redis
-
-    DB->>SA: POST /api/invalidate\n{ "service": "rider-app", "pattern": "RouteById" }
-
-    SA->>SA: Throttle check (cooldown per service)
-
-    par local call
-        SA->>AppA: POST /internal/lens/invalidate\n{ "pattern": "RouteById" }
-        AppA-->>SA: 200 OK
-    and broadcast
-        SA->>T: Broadcast(service, payload)
-        T->>SB: gRPC BroadcastRequest
-        T->>SC: gRPC BroadcastRequest
-        SB->>AppB: POST /internal/lens/invalidate
-        SC->>AppC: POST /internal/lens/invalidate
-        AppB-->>SB: 200 OK
-        AppC-->>SC: 200 OK
-        SB-->>T: Ack { success: true }
-        SC-->>T: Ack { success: true }
-    end
-
-    SA->>R: Append to replay log + audit log
-    SA-->>DB: { "total": 3, "confirmed": 3, "instances": [...] }
+```yaml
+transport:   { provider: grpc }
+persistence: { provider: memory }
+discovery:   { provider: memberlist }
 ```
 
-### Fetch flow
+### Production (durable store + metrics)
 
-```mermaid
-sequenceDiagram
-    participant DB as Dashboard
-    participant SA as Sidecar A
-    participant T as Transport (gRPC/NATS)
-    participant SB as Sidecar B
-    participant AppB as App B
+```bash
+go build -tags "lens_grpc lens_memberlist" -o lens .
+```
 
-    DB->>SA: POST /api/fetch\n{ "service": "rider-app", "instance": "pod-b", "key": "RouteById:123" }
+```yaml
+transport:
+  provider: grpc
+  config: { grpcPort: "8901" }
 
-    SA->>SA: instance == self? No, route via transport
+persistence:
+  provider: redis
+  config: { addr: "redis:6379" }
 
-    SA->>T: Get(service, instance="pod-b", key)
-    T->>SB: gRPC GetRequest { payload: { "key": "RouteById:123" } }
+discovery:
+  provider: memberlist
+  config: { bindPort: 7946 }
 
-    SB->>AppB: POST /internal/lens/get\n{ "key": "RouteById:123" }
-    AppB-->>SB: { "found": true, "value": { ... } }
+observer:
+  enabled: true
+  providers:
+    - name: sql
+      config: { driver: postgres, dsn: "postgres://lens:lens@postgres:5432/lens?sslmode=disable" }
+    - name: prometheus
+```
 
-    SB-->>T: GetResponse { body, statusCode: 200 }
-    T-->>SA: body
-    SA-->>DB: cached value JSON
+### All-in-one broker (single NATS server for every layer)
+
+```bash
+go build -tags "lens_nats lens_natsdiscovery lens_natskv" -o lens .
+```
+
+```yaml
+transport:   { provider: nats,   config: { natsUrl: "nats://broker:4222" } }
+persistence: { provider: natskv, config: { natsUrl: "nats://broker:4222" } }
+discovery:   { provider: nats,   config: { natsUrl: "nats://broker:4222" } }
 ```
 
 ---
 
 ## Quick start
 
-The quick start runs the cache-visibility reference implementation. Replace the target app endpoints with your own to adapt it.
-
-**Run from source:**
-
 ```bash
-LENS_TARGET_URL=http://localhost:8080 \
-LENS_REDIS_ADDR=localhost:6379 \
-go run github.com/vedanshu/lens
+cd example
+docker compose -f docker-compose.nats-standalone.yml up --build -d
 ```
 
-**Docker:**
+Three app pods + three sidecars + NATS + PostgreSQL. Open `http://localhost:8921` for the dashboard.
 
-```bash
-docker run --rm \
-  -e LENS_TARGET_URL=http://your-app:8080 \
-  -e LENS_REDIS_ADDR=redis:6379 \
-  -p 8900:8900 \
-  ghcr.io/Vedanshu7/lens:latest
+---
+
+## Architecture
+
+Each pod runs one sidecar. Sidecars discover each other through the configured discovery layer and communicate through the configured transport. Any client or dashboard only needs to reach one sidecar — it routes to the rest.
+
+```mermaid
+graph LR
+    subgraph Pod A
+        AppA[App A]
+        SA[Sidecar A\n:8900]
+        AppA <-->|localhost| SA
+    end
+
+    subgraph Pod B
+        AppB[App B]
+        SB[Sidecar B\n:8900]
+        AppB <-->|localhost| SB
+    end
+
+    subgraph Pod C
+        AppC[App C]
+        SC[Sidecar C\n:8900]
+        AppC <-->|localhost| SC
+    end
+
+    Store[(Persistence layer)]
+
+    SA <-->|transport layer| SB
+    SA <-->|transport layer| SC
+    SB <-->|transport layer| SC
+
+    SA <-->|replay log\naudit log| Store
+    SB <--> Store
+    SC <--> Store
+
+    Dashboard[Dashboard / API client] -->|HTTP| SA
 ```
 
 ---
 
 ## Integrating your app
 
-Your app keeps its in-memory cache exactly as-is. Expose three HTTP endpoints so the sidecar can interact with it.
+Expose three HTTP endpoints on the target app. The sidecar calls these automatically.
 
-### 1. Identity endpoint (required)
+### Identity endpoint
 
 ```
 GET /internal/lens/info
--> { "service": "rider-app", "instance": "rider-app-pod-xyz" }
+-> { "service": "my-service", "instance": "pod-xyz" }
 ```
 
-Called once at startup. `service` is the logical service name shared by all pods. `instance` is unique per pod (use the pod name or hostname).
+Called once on startup. `service` is shared by all replicas; `instance` is unique per pod (use hostname or pod name).
 
-### 2. Fetch endpoint (required)
-
-```
-POST /internal/lens/get
-<- { "key": "RouteById:config-id:route-123" }
--> { "found": true, "value": { "vehicleType": "SUV" } }
-```
-
-Look up the key in your in-memory cache and return its current value. Return `"found": false` when the key is not present.
-
-### 3. Invalidate endpoint (required)
+### Invalidate endpoint
 
 ```
 POST /internal/lens/invalidate
-<- { "pattern": "RouteById" }
+<- { "pattern": "some-prefix" }
 -> 200 OK
 ```
 
-Remove any cached entries whose key contains `pattern`. Pass `null` to clear the entire cache.
+Remove cached entries whose key contains `pattern`. Pass `null` to clear everything.
 
-### 4. Declare endpoint (optional, enables dashboard visibility)
+### Fetch endpoint
+
+```
+POST /internal/lens/get
+<- { "key": "my-key:123" }
+-> { "found": true, "value": "..." }
+```
+
+Return the current value of a key from this pod's cache. Return `"found": false` when absent.
+
+### Declare endpoint (optional — enables dashboard key browsing)
 
 ```
 POST http://localhost:8900/api/declare
-<- { "keyName": "RouteById:config-id:route-123", "keySchema": null, "ttlInSeconds": 3600 }
--> 200 OK
+<- { "keyName": "my-key:123", "keySchema": null, "ttlInSeconds": 3600 }
 ```
 
-Call this whenever your app writes to its cache. The sidecar stores the key metadata so the dashboard can list and browse keys. Without this, get and invalidate still work but keys will not appear in the dashboard.
+Call this whenever your app writes to its cache. Keys appear in the dashboard without this call but the schema metadata won't be stored.
+
+---
+
+## Adding your own provider
+
+Any layer can be extended without touching existing code.
+
+```go
+// 1. Implement the interface and register in init()
+func init() {
+    transport.Register("my-provider", func(host transport.TransportHost, cfg map[string]any) (transport.Transport, error) {
+        return newMyTransport(host, cfg)
+    })
+}
+```
+
+```go
+// 2. Blank import in a providers_myprovider.go file at the root
+//go:build lens_myprovider
+
+package main
+
+import _ "github.com/vedanshu/lens/internal/transport/myprovider"
+```
+
+```bash
+# 3. Include the build tag when compiling
+go build -tags "lens_grpc lens_memberlist lens_myprovider" -o lens .
+```
+
+No changes anywhere else in the codebase.
 
 ---
 
 ## Sidecar API
 
-All endpoints work from any sidecar. The dashboard only needs to reach one.
+All endpoints are available from any sidecar. Clients only need to reach one.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/health` | Connectivity check (Redis, target, observability). |
-| `GET` | `/api/services` | List all services with live sidecars. |
-| `GET` | `/api/nodes?service=X` | List live pods for a service. |
-| `GET` | `/api/keys?service=X` | List declared cache keys for a service. |
-| `GET` | `/api/keys?service=X&instance=Y` | List keys declared by a specific pod. |
-| `POST` | `/api/fetch` | Read a cached value from a specific pod's memory. |
-| `POST` | `/api/invalidate` | Clear cache entries across all pods of a service. |
-| `POST` | `/api/declare` | Register a cache key (called by your app). |
-| `GET` | `/api/audit` | Recent invalidation audit log (last 500 entries). |
-| `GET` | `/metrics` | Prometheus metrics (when prometheus provider is active). |
-| `GET` | `/api/obs/latency` | Per-service latency histogram (SQL observer required). |
-| `GET` | `/api/obs/flow` | Invalidation/fetch throughput (SQL observer required). |
-| `GET` | `/api/obs/deadpods` | Pods that timed out during invalidation. |
-| `GET` | `/api/obs/discovery` | Peer join/leave events. |
-| `GET` | `/api/obs/summary` | Aggregate summary for a service. |
-
----
-
-## Configuration
-
-All configuration is via `LENS_*` environment variables or a `lens.yaml` file.
-
-| Variable | Default | Description |
-|---|---|---|
-| `LENS_TARGET_URL` | `http://localhost:8080` | Base URL of the service this sidecar is attached to. |
-| `LENS_PORT` | `8900` | HTTP port the sidecar listens on. |
-| `LENS_BIND_ADDR` | `127.0.0.1` | Local address the HTTP server binds to. |
-| `LENS_TOKEN` | _(empty)_ | Shared secret sent as `x-lens-token`. Empty disables auth. |
-| `LENS_LOG_LEVEL` | `info` | Minimum log level: `debug`, `info`, `warn`, `error`. |
-| `LENS_TRANSPORT` | `grpc` | Transport provider: `grpc` or `nats`. |
-| `LENS_PERSISTENCE` | `redis` | Persistence provider: `redis` or `memory`. |
-| `LENS_DISCOVERY` | `memberlist` | Discovery provider: `memberlist` or `static`. |
-| `LENS_REDIS_ADDR` | `localhost:6379` | Redis server address (`host:port`). |
-| `LENS_REDIS_DB` | `0` | Redis database index. |
-| `LENS_GRPC_PORT` | `8901` | Port the gRPC server listens on. |
-| `LENS_NATS_URL` | `nats://localhost:4222` | NATS server URL. |
-| `LENS_GOSSIP_PORT` | `7946` | UDP port for the memberlist gossip protocol. |
-| `LENS_ADVERTISE_ADDR` | _(auto-detected)_ | IP peers use to reach this pod. Override when behind NAT. |
-| `LENS_COOLDOWN_MS` | `1000` | Minimum ms between invalidations for the same service. |
-| `LENS_REPLAY_ENABLED` | `true` | Replay missed invalidations on startup. |
-| `LENS_REPLAY_WINDOW_HOURS` | `24` | How far back the replay log is scanned on startup. |
+| `GET` | `/api/health` | Connectivity check for all layers |
+| `GET` | `/api/services` | List all services with live sidecars |
+| `GET` | `/api/nodes?service=X` | List live instances for a service |
+| `GET` | `/api/keys?service=X` | List declared cache keys |
+| `GET` | `/api/providers?service=X` | Active provider stack for a service |
+| `POST` | `/api/fetch` | Read a value from a specific instance's cache |
+| `POST` | `/api/invalidate` | Broadcast a cache clear across all instances |
+| `POST` | `/api/declare` | Register a cache key (called by your app) |
+| `GET` | `/api/audit` | Invalidation audit log (last 500 entries) |
+| `GET` | `/metrics` | Prometheus metrics (when prometheus provider active) |
+| `GET` | `/api/obs/latency` | Latency percentiles over time (SQL observer required) |
+| `GET` | `/api/obs/flow` | Invalidation and fetch throughput |
+| `GET` | `/api/obs/deadpods` | Pods that timed out during invalidation |
+| `GET` | `/api/obs/discovery` | Peer join and leave events |
+| `GET` | `/api/obs/summary` | Aggregate metrics for a service |
 
 ---
 
 ## Dashboard
 
-The React dashboard is served at `/` when `dashboard/dist` is present next to the binary.
+Each sidecar serves its own dashboard. Opening any sidecar port gives you that cluster's live view — services, nodes, keys, audit log, and observability charts. Provider stack badges show the active transport, persistence, discovery, and observer combination per service.
+
+**Dev mode:**
 
 ```bash
 cd dashboard
-npm install
-npm run build
+cp .env.example .env      # set VITE_SIDECAR_PORT to your sidecar's port
+npm install && npm run dev
 ```
 
-Start the sidecar and open `http://localhost:8900`.
+Two stacks side by side:
+
+```bash
+VITE_PORT=5173 VITE_SIDECAR_PORT=8901 npm run dev   # cluster A
+VITE_PORT=5174 VITE_SIDECAR_PORT=8921 npm run dev   # cluster B
+```
+
+Pre-built image: `ghcr.io/vedanshu7/lens-dashboard:main`
+
+---
+
+## Configuration reference
+
+All configuration is via `lens.yaml` or `LENS_*` environment variables.
+
+```yaml
+transport:
+  provider: <name>
+  config: <provider-specific>
+
+persistence:
+  provider: <name>
+  config: <provider-specific>
+
+discovery:
+  provider: <name>
+  config: <provider-specific>
+
+observer:
+  enabled: true
+  providers:
+    - name: <name>
+      config: <provider-specific>
+
+agent:
+  targetURL: "http://localhost:8080"
+  port: "8900"
+  bindAddr: "0.0.0.0"
+  token: ""
+  logLevel: info
+  replay:
+    enabled: true
+    windowHours: 24
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `LENS_TARGET_URL` | `http://localhost:8080` | Base URL of the app this sidecar is attached to |
+| `LENS_PORT` | `8900` | HTTP port the sidecar listens on |
+| `LENS_BIND_ADDR` | `0.0.0.0` | Address the HTTP server binds to |
+| `LENS_TOKEN` | _(empty)_ | Shared secret sent as `x-lens-token`. Empty disables auth. |
+| `LENS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
+| `LENS_ADVERTISE_ADDR` | _(auto)_ | IP peers use to reach this pod. Override when behind NAT. |
+| `LENS_COOLDOWN_MS` | `1000` | Minimum ms between invalidations for the same service |
+| `LENS_REPLAY_ENABLED` | `true` | Replay missed invalidations on startup |
+| `LENS_REPLAY_WINDOW_HOURS` | `24` | How far back the replay log is scanned on startup |
 
 ---
 
@@ -465,16 +366,18 @@ Start the sidecar and open `http://localhost:8900`.
 ```bash
 git clone https://github.com/Vedanshu7/lens.git
 cd lens
-go build ./...
+
+# Default build (gRPC transport, memberlist discovery)
+go build -tags "lens_grpc lens_memberlist" -o lens .
+
+# All-NATS build
+go build -tags "lens_nats lens_natsdiscovery lens_natskv" -o lens .
+
+# With OpenTelemetry
+go build -tags "lens_grpc lens_memberlist lens_otel" -o lens .
 ```
 
-Enable the OpenTelemetry provider (adds the `go.opentelemetry.io/otel` dependency):
-
-```bash
-go build -tags lens_otel ./...
-```
-
-Minimum Go version: **1.24**.
+Minimum Go version: **1.24**
 
 ---
 
