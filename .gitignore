@@ -1,5 +1,30 @@
+# Go binary
 lens
 *.exe
 *.test
 *.out
+
+# Environment
 .env
+.env.*
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / React
+node_modules/
+dist/
+.next/
+.nuxt/
+*.tsbuildinfo
+
+# Dependency lock files (keep package-lock.json, ignore yarn.lock if not used)
+yarn.lock
+pnpm-lock.yaml
