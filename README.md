@@ -10,11 +10,11 @@ Lens solves them once as a single, well-tested codebase. Every layer is a named 
 
 ## What is already solved
 
-**Peer communication.** How pods find and talk to each other without a service mesh. Lens ships with gRPC for direct pod-to-pod calls and NATS for broker-based fan-out. Both implement the same `Transport` interface so the rest of the code never changes.
+**Peer communication.** How pods find and talk to each other without a service mesh. Providers: gRPC (direct, zero broker), NATS (broker fan-out), Kafka (high-throughput), Redis Streams (reuse existing Redis). All implement the same `Transport` interface so nothing else changes when you swap.
 
-**Peer discovery.** How the live pod list stays current. Memberlist uses gossip with zero external infrastructure. Static uses a fixed seed list for environments where UDP gossip is restricted. Both emit the same join/leave event stream.
+**Peer discovery.** How the live pod list stays current. Providers: memberlist (gossip, zero infra), static (fixed seed list), Consul (service catalog), Kubernetes (watches EndpointSlices natively). All emit the same join/leave event stream.
 
-**Shared state.** Replay logs, audit trails, and cross-pod metadata. Redis or Valkey for production deployments. In-memory for local dev with zero infrastructure. Both implement the same `Backend` interface.
+**Shared state.** Replay logs, audit trails, and cross-pod metadata. Providers: Redis, Valkey (Redis-compatible, higher throughput), or in-memory for local dev. All implement the same `Backend` interface.
 
 **Observability.** Structured events at every meaningful moment (invalidations, fetches, peer joins, dead pods). Six providers available, and multiple can run simultaneously.
 
@@ -28,6 +28,8 @@ Lens solves them once as a single, well-tested codebase. Every layer is a named 
 |---|---|---|
 | gRPC | `grpc` | Default. Direct pod-to-pod, lowest latency, no broker required. |
 | NATS | `nats` | Pods behind NAT or in separate subnets, or a broker is already in place. |
+| Kafka | `kafka` | High-throughput fan-out, Kafka already in your stack. Build tag: `lens_kafka`. |
+| Redis Streams | `redis-streams` | Reuses your existing Redis instance, zero extra infrastructure. |
 
 ### Discovery
 
@@ -35,12 +37,15 @@ Lens solves them once as a single, well-tested codebase. Every layer is a named 
 |---|---|---|
 | Memberlist | `memberlist` | Default. Gossip-based, works on any network that allows UDP between pods. |
 | Static | `static` | Fixed deployments where the pod list is known and gossip is not available. |
+| Consul | `consul` | Consul service catalog already in use for service registration. Build tag: `lens_consul`. |
+| Kubernetes | `kubernetes` | Native K8s deployments. Watches EndpointSlices directly. Build tag: `lens_k8s`. |
 
 ### Persistence
 
 | Provider | `LENS_PERSISTENCE` | When to use |
 |---|---|---|
 | Redis | `redis` | Default. Production: durable replay log, audit trail, shared metadata. |
+| Valkey | `valkey` | Redis-compatible, higher throughput. Drop-in replacement. Build tag: `lens_valkey`. |
 | In-memory | `memory` | Local dev and tests. Zero infrastructure. State is lost on restart. |
 
 ### Observability
@@ -126,9 +131,9 @@ Every layer switches with a single environment variable. The binary does not cha
 
 | Layer | Default | Alternatives | How to switch |
 |---|---|---|---|
-| Transport | `grpc` | `nats` | `LENS_TRANSPORT=nats` |
-| Persistence | `redis` | `memory` | `LENS_PERSISTENCE=memory` |
-| Discovery | `memberlist` | `static` | `LENS_DISCOVERY=static` |
+| Transport | `grpc` | `nats`, `kafka`, `redis-streams` | `LENS_TRANSPORT=nats` |
+| Persistence | `redis` | `valkey`, `memory` | `LENS_PERSISTENCE=memory` |
+| Discovery | `memberlist` | `static`, `consul`, `kubernetes` | `LENS_DISCOVERY=static` |
 | Observability | `noop` | `sql`, `prometheus`, `otel`, `webhook`, `stdout` | config file |
 
 **Local dev with zero external dependencies:**
