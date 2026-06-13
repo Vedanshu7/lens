@@ -17,6 +17,64 @@ Lens solves this once. Every subsystem is a registered provider behind a clean i
 
 ---
 
+## Swap any layer without changing code
+
+Every subsystem in Lens is a named provider behind a clean interface. Switching the entire transport, persistence, discovery, or observability stack is a single environment variable change. No code edits, no recompile, no wiring changes.
+
+| Layer | Default | Alternatives | How to switch |
+|---|---|---|---|
+| Transport | `grpc` | `nats` | `LENS_TRANSPORT=nats` |
+| Persistence | `redis` | `memory` | `LENS_PERSISTENCE=memory` |
+| Discovery | `memberlist` | `static` | `LENS_DISCOVERY=static` |
+| Observability | `noop` | `sql`, `prometheus`, `otel`, `webhook`, `stdout` | config file |
+
+**Example: local dev with no external dependencies**
+
+```bash
+LENS_TRANSPORT=grpc \
+LENS_PERSISTENCE=memory \
+LENS_DISCOVERY=static \
+go run .
+```
+
+**Example: production with NATS and OpenTelemetry**
+
+```bash
+LENS_TRANSPORT=nats \
+LENS_NATS_URL=nats://broker:4222 \
+LENS_PERSISTENCE=redis \
+LENS_REDIS_ADDR=redis:6379 \
+LENS_DISCOVERY=memberlist \
+go run .
+```
+
+The same binary, the same business logic, entirely different infrastructure underneath.
+
+**Adding your own provider** takes three steps:
+
+```go
+// 1. Implement the interface and register in init()
+func init() {
+    transport.Register("kafka", func(host transport.TransportHost, cfg map[string]any) (transport.Transport, error) {
+        return newKafkaTransport(host, cfg)
+    })
+}
+```
+
+```go
+// 2. Blank import in main.go to load the provider
+import _ "github.com/Vedanshu7/lens/internal/transport/kafka"
+```
+
+```bash
+# 3. Switch to it
+LENS_TRANSPORT=kafka go run .
+```
+
+No changes anywhere else. The registry wires it in automatically.
+
+---
+
 ## Architecture
 
 Each pod runs Lens as a sidecar process. Sidecars discover each other via gossip (memberlist) or a static list and coordinate through Redis. The dashboard talks to any single sidecar; that sidecar routes to the rest.
