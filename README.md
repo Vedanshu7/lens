@@ -1,17 +1,17 @@
 # Lens
 
-A production-ready Go sidecar framework with pluggable transport, discovery, persistence, and observability — all wired together in one codebase.
+A production-ready Go sidecar framework with pluggable transport, discovery, persistence, and observability, all wired together in one codebase.
 
 Building a sidecar means solving the same problems every time: how do pods find each other, how do they talk, where does state live, how do you observe what's happening. Most teams bolt these together ad-hoc, end up with something brittle, and repeat the work for the next project.
 
-Lens solves this once. Every subsystem is a registered provider behind a clean interface — swap gRPC for NATS, Redis for in-memory, memberlist gossip for a static peer list, Prometheus for OpenTelemetry — without touching the core. The included cache-visibility use case demonstrates all four subsystems working together end-to-end, but the framework is the point. Fork it, replace the domain logic, keep the infrastructure.
+Lens solves this once. Every subsystem is a registered provider behind a clean interface. Swap gRPC for NATS, Redis for in-memory, memberlist gossip for a static peer list, Prometheus for OpenTelemetry, without touching the core. The included cache-visibility use case demonstrates all four subsystems working together end-to-end, but the framework is the point. Fork it, replace the domain logic, keep the infrastructure.
 
 **What you get out of the box:**
 - Pod-to-pod communication via gRPC or NATS.
 - Peer discovery via gossip (memberlist) or a static list.
 - Shared state via Redis or in-memory backends.
 - Structured telemetry via SQL, Prometheus, OTel, webhook, or stdout.
-- Pluggable provider registry — add a new backend with one `init()` and one blank import.
+- Pluggable provider registry: add a new backend with one `init()` and one blank import.
 - YAML config with environment variable substitution.
 - Replay log for catching up on missed events after a pod restart.
 
@@ -19,7 +19,7 @@ Lens solves this once. Every subsystem is a registered provider behind a clean i
 
 ## Architecture
 
-Each pod runs Lens as a sidecar process. Sidecars discover each other via gossip (memberlist) or a static list and coordinate through Redis. The dashboard talks to any single sidecar — that sidecar routes to the rest.
+Each pod runs Lens as a sidecar process. Sidecars discover each other via gossip (memberlist) or a static list and coordinate through Redis. The dashboard talks to any single sidecar; that sidecar routes to the rest.
 
 ```mermaid
 graph LR
@@ -58,7 +58,7 @@ graph LR
 
 ## Provider system
 
-Lens is built around four pluggable subsystems. Each provider registers itself via `init()` — adding a new one is a blank import in `main.go`.
+Lens is built around four pluggable subsystems. Each provider registers itself via `init()`. Adding a new one is a blank import in `main.go`.
 
 ```mermaid
 graph TD
@@ -78,7 +78,7 @@ graph TD
     Discovery --> Memberlist[Memberlist\ngossip]
     Discovery --> Static[Static\nfixed peer list]
 
-    Observability --> SQL[SQL\nSQLite · PostgreSQL · MySQL]
+    Observability --> SQL[SQL\nSQLite / PostgreSQL / MySQL]
     Observability --> Prometheus[Prometheus\n/metrics]
     Observability --> OTel[OpenTelemetry\n-tags lens_otel]
     Observability --> Webhook[Webhook\nHTTP POST events]
@@ -100,7 +100,7 @@ sequenceDiagram
     participant D as Discovery (memberlist)
     participant P as Peers
 
-    S->>R: Ping — verify persistence is reachable
+    S->>R: Ping: verify persistence is reachable
     R-->>S: OK
 
     S->>A: GET /internal/lens/info
@@ -110,14 +110,14 @@ sequenceDiagram
     S->>D: Register self (service, instance, gRPC addr, agent URL)
     D->>P: Gossip announce
 
-    S->>D: Watch — subscribe to join/leave events
-    D-->>S: Stream of peer events → peer map updated
+    S->>D: Watch: subscribe to join/leave events
+    D-->>S: Stream of peer events, peer map updated
 
     S->>R: Read replay log (last 24 h)
     R-->>S: Missed invalidation entries since last checkpoint
     S->>A: POST /internal/lens/invalidate (for each missed entry)
 
-    S->>S: Mark live — start serving /api/* requests
+    S->>S: Mark live: start serving /api/* requests
 ```
 
 ---
@@ -177,7 +177,7 @@ sequenceDiagram
 
     DB->>SA: POST /api/fetch\n{ "service": "rider-app", "instance": "pod-b", "key": "RouteById:123" }
 
-    SA->>SA: instance == self? No → route via transport
+    SA->>SA: instance == self? No, route via transport
 
     SA->>T: Get(service, instance="pod-b", key)
     T->>SB: gRPC GetRequest { payload: { "key": "RouteById:123" } }
@@ -209,7 +209,7 @@ docker run --rm \
   -e LENS_TARGET_URL=http://your-app:8080 \
   -e LENS_REDIS_ADDR=redis:6379 \
   -p 8900:8900 \
-  ghcr.io/vedanshu/lens:latest
+  ghcr.io/Vedanshu7/lens:latest
 ```
 
 ---
@@ -222,7 +222,7 @@ Your app keeps its in-memory cache exactly as-is. Expose three HTTP endpoints so
 
 ```
 GET /internal/lens/info
-→ { "service": "rider-app", "instance": "rider-app-pod-xyz" }
+-> { "service": "rider-app", "instance": "rider-app-pod-xyz" }
 ```
 
 Called once at startup. `service` is the logical service name shared by all pods. `instance` is unique per pod (use the pod name or hostname).
@@ -231,8 +231,8 @@ Called once at startup. `service` is the logical service name shared by all pods
 
 ```
 POST /internal/lens/get
-← { "key": "RouteById:config-id:route-123" }
-→ { "found": true, "value": { "vehicleType": "SUV" } }
+<- { "key": "RouteById:config-id:route-123" }
+-> { "found": true, "value": { "vehicleType": "SUV" } }
 ```
 
 Look up the key in your in-memory cache and return its current value. Return `"found": false` when the key is not present.
@@ -241,21 +241,21 @@ Look up the key in your in-memory cache and return its current value. Return `"f
 
 ```
 POST /internal/lens/invalidate
-← { "pattern": "RouteById" }
-→ 200 OK
+<- { "pattern": "RouteById" }
+-> 200 OK
 ```
 
 Remove any cached entries whose key contains `pattern`. Pass `null` to clear the entire cache.
 
-### 4. Declare endpoint (optional — enables dashboard visibility)
+### 4. Declare endpoint (optional, enables dashboard visibility)
 
 ```
 POST http://localhost:8900/api/declare
-← { "keyName": "RouteById:config-id:route-123", "keySchema": null, "ttlInSeconds": 3600 }
-→ 200 OK
+<- { "keyName": "RouteById:config-id:route-123", "keySchema": null, "ttlInSeconds": 3600 }
+-> 200 OK
 ```
 
-Call this whenever your app writes to its cache. The sidecar stores the key metadata so the dashboard can list and browse keys. Without this, get and invalidate still work — you just won't see keys listed.
+Call this whenever your app writes to its cache. The sidecar stores the key metadata so the dashboard can list and browse keys. Without this, get and invalidate still work but you won't see keys listed.
 
 ---
 
@@ -326,7 +326,7 @@ Start the sidecar and open `http://localhost:8900`.
 ## Building from source
 
 ```bash
-git clone https://github.com/vedanshu/lens.git
+git clone https://github.com/Vedanshu7/lens.git
 cd lens
 go build ./...
 ```
@@ -343,4 +343,4 @@ Minimum Go version: **1.24**.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

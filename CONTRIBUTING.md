@@ -104,7 +104,7 @@ For optional providers that add heavy dependencies, use a build tag (`//go:build
 
 **One logical change per PR.** Refactoring and feature work belong in separate PRs.
 
-**PR description.** Explain the *why* — what problem this change solves and why this approach was chosen. The diff explains the *what*.
+**PR description.** Explain the *why*: what problem this change solves and why this approach was chosen. The diff explains the *what*.
 
 **Before opening the PR:**
 
