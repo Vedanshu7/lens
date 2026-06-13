@@ -1,0 +1,55 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+categories:
+  - title: 'New Providers'
+    labels:
+      - 'provider:transport'
+      - 'provider:discovery'
+      - 'provider:persistence'
+      - 'provider:observability'
+  - title: 'New Features'
+    labels:
+      - 'enhancement'
+  - title: 'Bug Fixes'
+    labels:
+      - 'bug'
+  - title: 'Performance'
+    labels:
+      - 'performance'
+  - title: 'Documentation'
+    labels:
+      - 'documentation'
+  - title: 'Maintenance'
+    labels:
+      - 'chore'
+      - 'dependencies'
+
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+change-title-escapes: '\<*_&'
+
+version-resolver:
+  major:
+    labels:
+      - 'breaking-change'
+  minor:
+    labels:
+      - 'enhancement'
+      - 'provider:transport'
+      - 'provider:discovery'
+      - 'provider:persistence'
+      - 'provider:observability'
+  patch:
+    labels:
+      - 'bug'
+      - 'documentation'
+      - 'chore'
+      - 'dependencies'
+  default: patch
+
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/Vedanshu7/lens/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION

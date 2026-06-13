@@ -1,0 +1,35 @@
+name: Good First Issue
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    name: Label good first issues
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const body = (context.payload.issue.body || '').toLowerCase();
+            const title = (context.payload.issue.title || '').toLowerCase();
+            const text = title + ' ' + body;
+
+            const keywords = [
+              'new provider', 'add provider', 'typo', 'documentation',
+              'readme', 'example', 'simple', 'easy', 'build tag',
+              'transport provider', 'discovery provider', 'persistence provider'
+            ];
+
+            if (keywords.some(kw => text.includes(kw))) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: ['good first issue']
+              });
+            }
