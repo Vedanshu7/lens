@@ -1,0 +1,55 @@
+name: PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  validate-title:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Conventional Commits format
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            test
+            chore
+          requireScope: false
+          subjectPattern: ^[A-Z]?.+$
+          subjectPatternError: |
+            The subject "{subject}" doesn't match the required pattern.
+            Keep it short and descriptive (e.g. "feat: add NATS discovery provider").
+
+  validate-branch:
+    name: Validate branch name
+    runs-on: ubuntu-latest
+    if: ${{ !startsWith(github.head_ref, 'dependabot/') }}
+    steps:
+      - name: Check branch naming convention
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          PATTERN="^(feat|fix|docs|refactor|test|chore)/.+"
+          if [[ ! "$BRANCH" =~ $PATTERN ]]; then
+            echo "FAIL: Branch '$BRANCH' does not follow the naming convention."
+            echo ""
+            echo "Required: <type>/<short-description>"
+            echo "Examples:"
+            echo "  feat/kafka-transport"
+            echo "  fix/memberlist-rejoin"
+            echo "  docs/all-nats-stack"
+            echo "  refactor/discovery-interface"
+            echo ""
+            echo "Allowed types: feat, fix, docs, refactor, test, chore"
+            exit 1
+          fi
+          echo "OK: Branch '$BRANCH' is valid."
