@@ -8,7 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/vedanshu/lens/internal/observability"
+	"github.com/Vedanshu7/lens/internal/observability"
 )
 
 func init() {

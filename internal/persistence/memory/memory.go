@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vedanshu/lens/internal/persistence"
+	"github.com/Vedanshu7/lens/internal/persistence"
 )
 
 func init() {

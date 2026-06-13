@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/vedanshu/lens/internal/transport"
+	"github.com/Vedanshu7/lens/internal/transport"
 )
 
 func init() {

@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
-	"github.com/vedanshu/lens/internal/discovery"
-	"github.com/vedanshu/lens/internal/persistence"
-	"github.com/vedanshu/lens/internal/store"
+	"github.com/Vedanshu7/lens/internal/discovery"
+	"github.com/Vedanshu7/lens/internal/persistence"
+	"github.com/Vedanshu7/lens/internal/store"
 )
 
 func init() {

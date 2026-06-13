@@ -1,4 +1,4 @@
-module github.com/vedanshu/lens
+module github.com/Vedanshu7/lens
 
 go 1.25.7
 

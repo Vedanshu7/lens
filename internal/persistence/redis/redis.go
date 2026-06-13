@@ -8,7 +8,7 @@ import (
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
-	"github.com/vedanshu/lens/internal/persistence"
+	"github.com/Vedanshu7/lens/internal/persistence"
 )
 
 func init() {

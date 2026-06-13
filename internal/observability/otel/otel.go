@@ -11,7 +11,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vedanshu/lens/internal/observability"
+	"github.com/Vedanshu7/lens/internal/observability"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"

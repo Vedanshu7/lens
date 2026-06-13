@@ -260,7 +260,7 @@ const file_internal_proto_lens_proto_rawDesc = "" +
 	"\tLensAgent\x12E\n" +
 	"\n" +
 	"Invalidate\x12\x1a.lens.v1.InvalidateRequest\x1a\x1b.lens.v1.InvalidateResponse\x120\n" +
-	"\x03Get\x12\x13.lens.v1.GetRequest\x1a\x14.lens.v1.GetResponseB0Z.github.com/vedanshu/lens/internal/proto/lensv1b\x06proto3"
+	"\x03Get\x12\x13.lens.v1.GetRequest\x1a\x14.lens.v1.GetResponseB0Z.github.com/Vedanshu7/lens/internal/proto/lensv1b\x06proto3"
 
 var (
 	file_internal_proto_lens_proto_rawDescOnce sync.Once

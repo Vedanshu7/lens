@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/vedanshu/lens/internal/persistence"
+	"github.com/Vedanshu7/lens/internal/persistence"
 )
 
 // Resolver discovers and tracks live peers of a named service.

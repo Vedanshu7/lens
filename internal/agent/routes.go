@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/vedanshu/lens/internal/discovery"
-	"github.com/vedanshu/lens/internal/observability"
-	"github.com/vedanshu/lens/internal/store"
+	"github.com/Vedanshu7/lens/internal/discovery"
+	"github.com/Vedanshu7/lens/internal/observability"
+	"github.com/Vedanshu7/lens/internal/store"
 )
 
 // agentURLForPeer resolves the HTTP agent base URL for the given svc/instance pair.

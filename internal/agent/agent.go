@@ -18,12 +18,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/vedanshu/lens/config"
-	"github.com/vedanshu/lens/internal/discovery"
-	"github.com/vedanshu/lens/internal/observability"
-	"github.com/vedanshu/lens/internal/persistence"
-	"github.com/vedanshu/lens/internal/store"
-	"github.com/vedanshu/lens/internal/transport"
+	"github.com/Vedanshu7/lens/config"
+	"github.com/Vedanshu7/lens/internal/discovery"
+	"github.com/Vedanshu7/lens/internal/observability"
+	"github.com/Vedanshu7/lens/internal/persistence"
+	"github.com/Vedanshu7/lens/internal/store"
+	"github.com/Vedanshu7/lens/internal/transport"
 )
 
 // Config holds all runtime configuration for the Lens sidecar.

@@ -12,20 +12,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vedanshu/lens/internal/agent"
+	"github.com/Vedanshu7/lens/internal/agent"
 
 	// Always-on providers (observability + persistence defaults).
-	_ "github.com/vedanshu/lens/internal/observability/noop"
-	_ "github.com/vedanshu/lens/internal/observability/prometheus"
-	_ "github.com/vedanshu/lens/internal/observability/sql"
-	_ "github.com/vedanshu/lens/internal/observability/stdout"
-	_ "github.com/vedanshu/lens/internal/observability/webhook"
-	_ "github.com/vedanshu/lens/internal/persistence/memory"
-	_ "github.com/vedanshu/lens/internal/persistence/redis"
+	_ "github.com/Vedanshu7/lens/internal/observability/noop"
+	_ "github.com/Vedanshu7/lens/internal/observability/prometheus"
+	_ "github.com/Vedanshu7/lens/internal/observability/sql"
+	_ "github.com/Vedanshu7/lens/internal/observability/stdout"
+	_ "github.com/Vedanshu7/lens/internal/observability/webhook"
+	_ "github.com/Vedanshu7/lens/internal/persistence/memory"
+	_ "github.com/Vedanshu7/lens/internal/persistence/redis"
 
 	// Optional providers — each file in providers/ carries its build tag.
 	// Example: go build -tags "lens_grpc lens_memberlist" .
-	_ "github.com/vedanshu/lens/providers"
+	_ "github.com/Vedanshu7/lens/providers"
 )
 
 func main() {

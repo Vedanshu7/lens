@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/go-zeromq/zmq4"
-	"github.com/vedanshu/lens/internal/transport"
+	"github.com/Vedanshu7/lens/internal/transport"
 )
 
 func init() {

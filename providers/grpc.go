@@ -2,4 +2,4 @@
 
 package providers
 
-import _ "github.com/vedanshu/lens/internal/transport/grpc"
+import _ "github.com/Vedanshu7/lens/internal/transport/grpc"

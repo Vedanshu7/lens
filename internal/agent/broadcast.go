@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vedanshu/lens/internal/store"
+	"github.com/Vedanshu7/lens/internal/store"
 )
 
 // Message is the invalidation payload exchanged between sidecars via the transport layer.

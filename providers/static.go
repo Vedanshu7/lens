@@ -2,4 +2,4 @@
 
 package providers
 
-import _ "github.com/vedanshu/lens/internal/discovery/static"
+import _ "github.com/Vedanshu7/lens/internal/discovery/static"

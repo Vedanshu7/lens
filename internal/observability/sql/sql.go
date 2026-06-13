@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vedanshu/lens/internal/observability"
+	"github.com/Vedanshu7/lens/internal/observability"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"

@@ -2,4 +2,4 @@
 
 package providers
 
-import _ "github.com/vedanshu/lens/internal/discovery/nats"
+import _ "github.com/Vedanshu7/lens/internal/discovery/nats"

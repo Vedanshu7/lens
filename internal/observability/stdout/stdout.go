@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vedanshu/lens/internal/observability"
+	"github.com/Vedanshu7/lens/internal/observability"
 )
 
 func init() {

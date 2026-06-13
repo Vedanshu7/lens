@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/vedanshu/lens/internal/persistence"
+	"github.com/Vedanshu7/lens/internal/persistence"
 )
 
 const (

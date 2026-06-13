@@ -18,8 +18,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
-	lensv1 "github.com/vedanshu/lens/internal/proto/lensv1"
-	"github.com/vedanshu/lens/internal/transport"
+	lensv1 "github.com/Vedanshu7/lens/internal/proto/lensv1"
+	"github.com/Vedanshu7/lens/internal/transport"
 )
 
 func init() {

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	kafka "github.com/segmentio/kafka-go"
-	"github.com/vedanshu/lens/internal/transport"
+	"github.com/Vedanshu7/lens/internal/transport"
 )
 
 func init() {

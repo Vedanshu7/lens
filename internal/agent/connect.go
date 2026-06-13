@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vedanshu/lens/internal/discovery"
-	"github.com/vedanshu/lens/internal/store"
-	itransport "github.com/vedanshu/lens/internal/transport"
+	"github.com/Vedanshu7/lens/internal/discovery"
+	"github.com/Vedanshu7/lens/internal/store"
+	itransport "github.com/Vedanshu7/lens/internal/transport"
 )
 
 // Connect retries dialing the target service in a loop until ctx is cancelled.
