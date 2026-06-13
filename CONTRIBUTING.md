@@ -7,7 +7,7 @@ Thank you for taking the time to contribute. This document covers the developmen
 ## Development setup
 
 ```bash
-git clone https://github.com/vedanshu/lens.git
+git clone https://github.com/Vedanshu7/lens.git
 cd lens
 go mod download
 ```
@@ -112,7 +112,6 @@ For optional providers that add heavy dependencies, use a build tag (`//go:build
 go build ./...
 go vet ./...
 gofmt -l .          # must print nothing
-go build ./...      # must succeed with no errors
 ```
 
 ---
