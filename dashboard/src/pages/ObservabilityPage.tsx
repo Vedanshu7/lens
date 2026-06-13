@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  BarChart, Bar, ScatterChart, Scatter, ResponsiveContainer, Legend,
+  BarChart, Bar, Cell, ScatterChart, Scatter, ResponsiveContainer, Legend,
 } from 'recharts'
 import { api } from '../lib/api'
+import { ProviderStack } from '../components/ProviderStack'
 
 const RANGES = ['1 hour', '6 hours', '24 hours', '7 days'] as const
 type Range = typeof RANGES[number]
@@ -13,7 +14,7 @@ function StatCard({ label, value, unit }: { label: string; value: string | numbe
   return (
     <div style={{
       background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 10, padding: '16px 20px', minWidth: 140,
+      borderRadius: 10, padding: '16px 20px',
     }}>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)' }}>
@@ -63,7 +64,7 @@ export function ObservabilityPage({ service }: { service?: string }) {
   })
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: 1200 }}>
+    <div style={{ padding: '24px 28px', height: '100%', overflowY: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Observability</h1>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -84,6 +85,8 @@ export function ObservabilityPage({ service }: { service?: string }) {
         </div>
       </div>
 
+      {svc && <ProviderStack service={svc} />}
+
       {!svc && (
         <div style={{
           padding: 32, textAlign: 'center',
@@ -98,7 +101,7 @@ export function ObservabilityPage({ service }: { service?: string }) {
         <>
           {/* Summary cards */}
           {summary && (
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 28 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 12, marginBottom: 28 }}>
               <StatCard label="Invalidations" value={summary.totalInvalidations} />
               <StatCard label="Avg Latency" value={summary.avgLatencyMs.toFixed(1)} unit="ms" />
               <StatCard label="p99 Latency" value={summary.p99LatencyMs.toFixed(1)} unit="ms" />
@@ -141,20 +144,31 @@ export function ObservabilityPage({ service }: { service?: string }) {
               <div style={{
                 background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 20,
               }}>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={[
-                    { name: 'Invalidate Success', value: flowData.invalidate.success, fill: '#22c55e' },
-                    { name: 'Invalidate Partial', value: flowData.invalidate.partial, fill: '#f59e0b' },
-                    { name: 'Invalidate Failure', value: flowData.invalidate.failure, fill: '#ef4444' },
-                    { name: 'Fetch Success', value: flowData.fetch.success, fill: '#7c8cf5' },
-                    { name: 'Fetch Failure', value: flowData.fetch.failure, fill: '#f43f5e' },
-                    { name: 'Replay', value: flowData.replay.total, fill: '#a78bfa' },
-                  ]}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#7c8cf5" />
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart
+                    data={[
+                      { name: 'Inval Success',  value: flowData.invalidate.success, fill: '#22c55e' },
+                      { name: 'Inval Partial',  value: flowData.invalidate.partial,  fill: '#f59e0b' },
+                      { name: 'Inval Failure',  value: flowData.invalidate.failure,  fill: '#ef4444' },
+                      { name: 'Fetch Success',  value: flowData.fetch.success,       fill: '#7c8cf5' },
+                      { name: 'Fetch Failure',  value: flowData.fetch.failure,       fill: '#f43f5e' },
+                      { name: 'Replay',         value: flowData.replay.total,        fill: '#a78bfa' },
+                    ]}
+                    margin={{ top: 4, right: 8, left: 0, bottom: 24 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--muted)' }} interval={0} angle={-20} textAnchor="end" />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} />
+                    <Tooltip
+                      contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}
+                      cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                    />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      {[
+                        '#22c55e', '#f59e0b', '#ef4444',
+                        '#7c8cf5', '#f43f5e', '#a78bfa',
+                      ].map((color, i) => <Cell key={i} fill={color} />)}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -162,7 +176,7 @@ export function ObservabilityPage({ service }: { service?: string }) {
           )}
 
           {/* Dead pods */}
-          {deadPodsData && deadPodsData.events.length > 0 && (
+          {deadPodsData && (deadPodsData.events ?? []).length > 0 && (
             <section style={{ marginBottom: 32 }}>
               <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Dead Pod Events</h2>
               <div style={{
@@ -177,7 +191,7 @@ export function ObservabilityPage({ service }: { service?: string }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {deadPodsData.events.map((e, i) => (
+                    {(deadPodsData?.events ?? []).map((e, i) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '8px 16px', color: 'var(--muted)' }}>{new Date(e.ts).toLocaleString()}</td>
                         <td style={{ padding: '8px 16px', fontFamily: 'monospace', color: 'var(--text)' }}>{e.peerId}</td>
@@ -191,7 +205,7 @@ export function ObservabilityPage({ service }: { service?: string }) {
           )}
 
           {/* Discovery timeline */}
-          {discoveryData && discoveryData.events.length > 0 && (
+          {discoveryData && (discoveryData.events ?? []).length > 0 && (
             <section style={{ marginBottom: 32 }}>
               <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Discovery Timeline</h2>
               <div style={{
@@ -203,7 +217,7 @@ export function ObservabilityPage({ service }: { service?: string }) {
                     <XAxis dataKey="peerCount" name="Peers" tick={{ fontSize: 11 }} />
                     <YAxis dataKey="resolutionMs" name="Resolution" unit="ms" tick={{ fontSize: 11 }} />
                     <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                    <Scatter data={discoveryData.events} fill="#7c8cf5" />
+                    <Scatter data={discoveryData?.events ?? []} fill="#7c8cf5" />
                   </ScatterChart>
                 </ResponsiveContainer>
               </div>
