@@ -1,10 +1,19 @@
 # Lens
 
-Observe, inspect, and invalidate in-memory caches across your entire fleet — without touching a single pod.
+A production-ready Go sidecar framework with pluggable transport, discovery, persistence, and observability — all wired together in one codebase.
 
-Your services cache aggressively and for good reason. But in-memory state is opaque. A stale entry in production means a pod restart, a blind `kubectl exec`, or a guess. Scale that to dozens of services and hundreds of pods and debugging becomes archaeology.
+Building a sidecar means solving the same problems every time: how do pods find each other, how do they talk, where does state live, how do you observe what's happening. Most teams bolt these together ad-hoc, end up with something brittle, and repeat the work for the next project.
 
-Lens is a lightweight sidecar that sits next to each pod and speaks a common protocol. Add three endpoints to your app, drop Lens alongside it, and you get a live view of every cached key on every pod — with the ability to inspect any value or clear any key across an entire service in a single API call.
+Lens solves this once. Every subsystem is a registered provider behind a clean interface — swap gRPC for NATS, Redis for in-memory, memberlist gossip for a static peer list, Prometheus for OpenTelemetry — without touching the core. The included cache-visibility use case demonstrates all four subsystems working together end-to-end, but the framework is the point. Fork it, replace the domain logic, keep the infrastructure.
+
+**What you get out of the box:**
+- Pod-to-pod communication via gRPC or NATS.
+- Peer discovery via gossip (memberlist) or a static list.
+- Shared state via Redis or in-memory backends.
+- Structured telemetry via SQL, Prometheus, OTel, webhook, or stdout.
+- Pluggable provider registry — add a new backend with one `init()` and one blank import.
+- YAML config with environment variable substitution.
+- Replay log for catching up on missed events after a pod restart.
 
 ---
 
