@@ -1,5 +1,5 @@
 //go:build lens_natskv
 
-package main
+package providers
 
 import _ "github.com/vedanshu/lens/internal/persistence/natskv"

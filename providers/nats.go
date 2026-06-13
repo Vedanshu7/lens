@@ -1,5 +1,5 @@
 //go:build lens_nats
 
-package main
+package providers
 
 import _ "github.com/vedanshu/lens/internal/transport/nats"

@@ -1,5 +1,5 @@
 //go:build lens_redisstreams
 
-package main
+package providers
 
 import _ "github.com/vedanshu/lens/internal/transport/redisstreams"

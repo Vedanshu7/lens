@@ -14,7 +14,7 @@ import (
 
 	"github.com/vedanshu/lens/internal/agent"
 
-	// Persistence and observability providers are always compiled in.
+	// Always-on providers (observability + persistence defaults).
 	_ "github.com/vedanshu/lens/internal/observability/noop"
 	_ "github.com/vedanshu/lens/internal/observability/prometheus"
 	_ "github.com/vedanshu/lens/internal/observability/sql"
@@ -22,9 +22,10 @@ import (
 	_ "github.com/vedanshu/lens/internal/observability/webhook"
 	_ "github.com/vedanshu/lens/internal/persistence/memory"
 	_ "github.com/vedanshu/lens/internal/persistence/redis"
-	// Transport and discovery providers are compiled in via build tags.
-	// Each providers_<name>.go file in this package carries the matching tag.
+
+	// Optional providers — each file in providers/ carries its build tag.
 	// Example: go build -tags "lens_grpc lens_memberlist" .
+	_ "github.com/vedanshu/lens/providers"
 )
 
 func main() {
