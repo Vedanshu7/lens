@@ -95,7 +95,7 @@ func (r *natsResolver) heartbeatLoop(ctx context.Context, self discovery.Service
 	subj := "lens.presence." + self.Service
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
-	r.nc.Publish(subj, data) //nolint:errcheck — immediate first beat
+	r.nc.Publish(subj, data) //nolint:errcheck
 	for {
 		select {
 		case <-ticker.C:

@@ -93,7 +93,7 @@ func (b *backend) kget(natsKey string) (entry, uint64, error) {
 	if en.Exp != "" {
 		t, _ := time.Parse(time.RFC3339, en.Exp)
 		if time.Now().After(t) {
-			b.kv.Delete(natsKey) //nolint:errcheck — lazy expiry
+			b.kv.Delete(natsKey) //nolint:errcheck
 			return entry{}, 0, nil
 		}
 	}
@@ -142,7 +142,7 @@ func (b *backend) Del(_ context.Context, keys ...string) error {
 	prefixes := []string{"v:", "l:", "h:", "s:"}
 	for _, k := range keys {
 		for _, pfx := range prefixes {
-			b.kv.Delete(pfx + k) //nolint:errcheck — best-effort across all types
+			b.kv.Delete(pfx + k) //nolint:errcheck
 		}
 	}
 	return nil
@@ -188,7 +188,7 @@ func (b *backend) LPush(_ context.Context, key string, vals ...string) error {
 		}
 		var list []string
 		if en.V != "" {
-			json.Unmarshal([]byte(en.V), &list) //nolint:errcheck — empty means []
+			json.Unmarshal([]byte(en.V), &list) //nolint:errcheck
 		}
 		// Prepend in reverse order so first val ends up at index 0.
 		for i := len(vals) - 1; i >= 0; i-- {
