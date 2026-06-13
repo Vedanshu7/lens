@@ -6,15 +6,29 @@ kind: SidecarConfig
 # LENS_* env vars remain as a fallback when no config file is set.
 
 transport:
-  # grpc (default) — direct pod-to-pod, zero infra, best for ≤100 pods
-  # nats           — NATS broker fan-out, better for 100+ pods
-  # kafka          — Kafka topics (build tag: lens_kafka)
-  # redis-streams  — reuses your existing Redis, zero extra infra
+  # grpc          (default) — direct pod-to-pod, zero infra, best for ≤100 pods
+  # nats                    — NATS broker fan-out, better for 100+ pods
+  # kafka                   — Kafka topics, durable log (build tag: lens_kafka)
+  # redis-streams           — reuses your existing Redis, zero extra infra (build tag: lens_redisstreams)
+  # zeromq                  — brokerless ZeroMQ ROUTER/DEALER (build tag: lens_zmq)
   provider: grpc
   config:
     grpcPort: "8901"
     # NATS example:
     # natsUrl: ${LENS_NATS_URL}
+
+    # Kafka example (requires build tag lens_kafka):
+    # provider: kafka
+    # brokers: ${KAFKA_BROKERS}   # comma-separated, e.g. "broker1:9092,broker2:9092"
+
+    # Redis Streams example (requires build tag lens_redisstreams):
+    # provider: redis-streams
+    # addr: ${LENS_REDIS_ADDR}
+    # db: 0
+
+    # ZeroMQ example (requires build tag lens_zmq):
+    # provider: zeromq
+    # zmqPort: "8902"
 
 persistence:
   # redis  (default) — mature, pipeline, used for audit + replay logs
@@ -31,6 +45,7 @@ persistence:
 discovery:
   # memberlist (default) — SWIM gossip, P2P, zero infra, works everywhere
   # static             — fixed seed list from config (no dynamic join/leave)
+  # dnssrv             — polls DNS SRV records, works in any environment (build tag: lens_dnssrv)
   # consul             — Consul service catalog (build tag: lens_consul)
   # kubernetes         — watches EndpointSlices (build tag: lens_k8s)
   provider: memberlist
@@ -41,6 +56,13 @@ discovery:
     #   - instance: pod-1
     #     grpcAddr: "10.0.0.1:8901"
     #     agentURL: "http://10.0.0.1:8900"
+
+    # DNS-SRV example (requires build tag lens_dnssrv):
+    # provider: dnssrv
+    # domain: svc.cluster.local   # DNS search domain
+    # pollIntervalSeconds: 30
+    # grpcPort: "8901"
+    # agentPort: "8900"
 
 observer:
   enabled: false   # set to true to enable structured event recording

@@ -27,8 +27,12 @@ import (
 	_ "github.com/vedanshu/lens/internal/persistence/redis"
 	_ "github.com/vedanshu/lens/internal/transport/grpc"
 	_ "github.com/vedanshu/lens/internal/transport/nats"
-	// Optional — compile with -tags lens_otel to enable:
-	// _ "github.com/vedanshu/lens/internal/observability/otel"
+	// Optional — compile with the matching build tag to enable:
+	// _ "github.com/vedanshu/lens/internal/observability/otel"       // -tags lens_otel
+	// _ "github.com/vedanshu/lens/internal/transport/zeromq"         // -tags lens_zmq
+	// _ "github.com/vedanshu/lens/internal/transport/redisstreams"   // -tags lens_redisstreams
+	// _ "github.com/vedanshu/lens/internal/transport/kafka"          // -tags lens_kafka
+	// _ "github.com/vedanshu/lens/internal/discovery/dnssrv"        // -tags lens_dnssrv
 )
 
 func main() {
