@@ -58,7 +58,7 @@ func (w *webhookObserver) Record(ctx context.Context, e observability.Event) err
 			var resp *http.Response
 			resp, err = w.client.Do(req)
 			if err == nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				if resp.StatusCode >= 400 {
 					err = fmt.Errorf("webhook: server returned %d", resp.StatusCode)
 				}

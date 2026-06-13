@@ -140,7 +140,7 @@ func (t *grpcTransport) Get(ctx context.Context, svc, instance, key string) ([]b
 func (t *grpcTransport) Close() error {
 	t.server.GracefulStop()
 	t.conns.Range(func(_, v any) bool {
-		v.(*grpc.ClientConn).Close()
+		_ = v.(*grpc.ClientConn).Close()
 		return true
 	})
 	return nil
@@ -148,7 +148,7 @@ func (t *grpcTransport) Close() error {
 
 func (t *grpcTransport) evictConn(addr string) {
 	if v, ok := t.conns.LoadAndDelete(addr); ok {
-		v.(*grpc.ClientConn).Close()
+		_ = v.(*grpc.ClientConn).Close()
 	}
 }
 
@@ -163,7 +163,7 @@ func (t *grpcTransport) conn(addr string) (*grpc.ClientConn, error) {
 		if err == nil {
 			actual, loaded := t.conns.LoadOrStore(addr, c)
 			if loaded {
-				c.Close()
+				_ = c.Close()
 				result = actual.(*grpc.ClientConn)
 			} else {
 				result = c

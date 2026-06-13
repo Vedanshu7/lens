@@ -212,7 +212,7 @@ func detectAdvertiseAddr() string {
 	if err != nil {
 		return "127.0.0.1"
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 	return conn.LocalAddr().(*net.UDPAddr).IP.String()
 }
 
@@ -320,13 +320,21 @@ func (a *Agent) Shutdown(ctx context.Context) {
 		a.deregister(ctx)
 	}
 	if a.transport != nil {
-		a.transport.Close()
+		if err := a.transport.Close(); err != nil {
+			slog.Warn("transport close", "err", err)
+		}
 	}
 	if a.disc != nil {
-		a.disc.Close()
+		if err := a.disc.Close(); err != nil {
+			slog.Warn("discovery close", "err", err)
+		}
 	}
-	a.Obs.Close()
-	a.store.Close()
+	if err := a.Obs.Close(); err != nil {
+		slog.Warn("observer close", "err", err)
+	}
+	if err := a.store.Close(); err != nil {
+		slog.Warn("store close", "err", err)
+	}
 }
 
 func (a *Agent) ready() bool { return a.live.Load() }
@@ -336,18 +344,6 @@ func (a *Agent) cancelDial() {
 		a.dialCancel()
 		a.dialCancel = nil
 	}
-}
-
-// spawn runs fn in a named goroutine with panic recovery.
-func (a *Agent) spawn(name string, fn func()) {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("goroutine panic", "name", name, "panic", r)
-			}
-		}()
-		fn()
-	}()
 }
 
 // SelfInstance returns the unique identifier of this sidecar's target instance.
@@ -458,10 +454,6 @@ func (a *Agent) watchPeers(eventCh <-chan discovery.Event) {
 	}
 }
 
-func (a *Agent) nodeKey() string {
-	return "lens:node:" + a.Info.Service + ":" + a.Info.Instance
-}
-
 func (a *Agent) cacheKey() string {
 	return "lens:cache:" + a.Info.Service + ":" + a.Info.Instance
 }
@@ -495,5 +487,5 @@ func (a *Agent) get(ctx context.Context, url string) (*http.Response, error) {
 
 func closeBody(resp *http.Response) {
 	io.Copy(io.Discard, resp.Body) //nolint:errcheck
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }

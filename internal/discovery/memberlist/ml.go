@@ -144,7 +144,7 @@ func (r *mlResolver) Close() error {
 	list := r.list
 	r.mu.RUnlock()
 	if list != nil {
-		list.Shutdown()
+		_ = list.Shutdown()
 	}
 	close(r.eventCh)
 	return nil

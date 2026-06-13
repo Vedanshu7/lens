@@ -105,7 +105,7 @@ func (a *demoApp) handleInvalidateAll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "broadcast failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 	slog.Info("broadcast sent", "status", resp.StatusCode)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -43,7 +43,7 @@ func init() {
 			return nil, fmt.Errorf("sql observer: open: %w", err)
 		}
 		if err := db.Ping(); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("sql observer: ping: %w", err)
 		}
 
@@ -58,7 +58,7 @@ func init() {
 		}
 
 		if err := o.ensureSchema(context.Background()); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("sql observer: schema: %w", err)
 		}
 
@@ -321,7 +321,7 @@ func (o *sqlObserver) QueryLatency(ctx context.Context, service, interval string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var out []observability.LatencyBucket
 	for rows.Next() {
@@ -359,7 +359,7 @@ func (o *sqlObserver) QueryDeadPods(ctx context.Context, service, interval strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var out []observability.DeadPodEvent
 	for rows.Next() {
@@ -394,7 +394,7 @@ func (o *sqlObserver) QueryDiscovery(ctx context.Context, interval string) ([]ob
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var out []observability.DiscoveryEvent
 	for rows.Next() {
@@ -429,7 +429,7 @@ func (o *sqlObserver) QueryFlow(ctx context.Context, service, interval string) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	stats := &observability.FlowStats{}
 	for rows.Next() {
