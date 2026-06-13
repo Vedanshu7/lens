@@ -22,6 +22,7 @@ import (
 	"github.com/vedanshu/lens/internal/discovery"
 	"github.com/vedanshu/lens/internal/observability"
 	"github.com/vedanshu/lens/internal/persistence"
+	"github.com/vedanshu/lens/internal/store"
 	"github.com/vedanshu/lens/internal/transport"
 )
 
@@ -148,22 +149,22 @@ func applyFile(cfg *Config, f config.File) {
 	}
 	cfg.ReplayEnabled = f.Agent.Replay.Enabled
 
-	if f.Transport.Provider != "" {
-		cfg.Transport = f.Transport.Provider
+	if n := f.Transport.ProviderName(); n != "" {
+		cfg.Transport = n
 	}
 	if len(f.Transport.Config) > 0 {
 		cfg.TransportConfig = f.Transport.Config
 	}
 
-	if f.Persistence.Provider != "" {
-		cfg.Persistence = f.Persistence.Provider
+	if n := f.Persistence.ProviderName(); n != "" {
+		cfg.Persistence = n
 	}
 	if len(f.Persistence.Config) > 0 {
 		cfg.PersistenceConfig = f.Persistence.Config
 	}
 
-	if f.Discovery.Provider != "" {
-		cfg.Discovery = f.Discovery.Provider
+	if n := f.Discovery.ProviderName(); n != "" {
+		cfg.Discovery = n
 	}
 	if len(f.Discovery.Config) > 0 {
 		cfg.DiscoveryConfig = f.Discovery.Config
@@ -173,7 +174,7 @@ func applyFile(cfg *Config, f config.File) {
 	if len(f.Observer.Providers) > 0 {
 		cfg.ObserverProviders = make([]ObserverProviderConfig, len(f.Observer.Providers))
 		for i, p := range f.Observer.Providers {
-			cfg.ObserverProviders[i] = ObserverProviderConfig{Name: p.Provider, Config: p.Config}
+			cfg.ObserverProviders[i] = ObserverProviderConfig{Name: p.ProviderName(), Config: p.Config}
 		}
 	}
 }
@@ -402,8 +403,9 @@ func (a *Agent) GetFromTarget(ctx context.Context, payload []byte) ([]byte, erro
 	return io.ReadAll(resp.Body)
 }
 
-// allServices returns deduplicated service names from the live peer map,
-// always including this instance's own service.
+// allServices returns deduplicated service names from the live peer map plus
+// any services registered in the Redis services set (covers cross-transport
+// services that share persistence but not a gossip cluster).
 func (a *Agent) allServices() []string {
 	seen := map[string]bool{}
 	if a.Info.Service != "" {
@@ -413,6 +415,15 @@ func (a *Agent) allServices() []string {
 		seen[v.(discovery.ServiceInstance).Service] = true
 		return true
 	})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if members, err := a.store.SMembers(ctx, store.ServicesSetKey()); err == nil {
+		for _, svc := range members {
+			if svc != "" {
+				seen[svc] = true
+			}
+		}
+	}
 	svcs := make([]string, 0, len(seen))
 	for s := range seen {
 		svcs = append(svcs, s)

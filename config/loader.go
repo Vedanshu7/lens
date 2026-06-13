@@ -24,9 +24,21 @@ type File struct {
 }
 
 // ProviderBlock names a provider and passes arbitrary configuration to it.
+// Top-level blocks (transport, persistence, discovery) use the "provider" key.
+// Observer provider list entries use the "name" key — both are supported.
 type ProviderBlock struct {
 	Provider string         `yaml:"provider"`
+	Name     string         `yaml:"name"`
 	Config   map[string]any `yaml:"config"`
+}
+
+// ProviderName returns the non-empty value between Provider and Name,
+// preferring Provider so top-level blocks and observer entries both work.
+func (p ProviderBlock) ProviderName() string {
+	if p.Provider != "" {
+		return p.Provider
+	}
+	return p.Name
 }
 
 // ObserverBlock controls the observability subsystem.

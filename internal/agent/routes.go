@@ -117,6 +117,7 @@ func (a *Agent) Routes() http.Handler {
 	gate("GET /api/services", a.handleServices)
 	gate("GET /api/nodes", a.handleNodes)
 	gate("GET /api/keys", a.handleKeys)
+	gate("GET /api/providers", a.handleProviders)
 	gate("POST /api/fetch", a.handleFetch)
 	gate("POST /api/invalidate", a.handleInvalidate)
 	gate("GET /api/audit", a.handleAudit)
@@ -584,6 +585,19 @@ func (a *Agent) handleAudit(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"entries": out, "count": len(out)}) //nolint:errcheck
 }
 
+func (a *Agent) selfProviders() map[string]any {
+	obs := make([]string, 0, len(a.Config.ObserverProviders))
+	for _, p := range a.Config.ObserverProviders {
+		obs = append(obs, p.Name)
+	}
+	return map[string]any{
+		"transport":   a.Config.Transport,
+		"persistence": a.Config.Persistence,
+		"discovery":   a.Config.Discovery,
+		"observers":   obs,
+	}
+}
+
 func (a *Agent) handleHealth(w http.ResponseWriter, r *http.Request) {
 	storeOK := a.store.Ping(r.Context()) == nil
 	_, hasObs := a.Obs.SQLObserver()
@@ -592,5 +606,32 @@ func (a *Agent) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"redis":         storeOK,
 		"target":        a.ready(),
 		"observability": hasObs,
+		"providers":     a.selfProviders(),
 	})
+}
+
+// handleProviders returns the provider stack (transport/persistence/discovery/observers)
+// for any service. Self is read from config directly; other services are read from
+// the Redis key written by that service's sidecar on connect.
+func (a *Agent) handleProviders(w http.ResponseWriter, r *http.Request) {
+	svc := r.URL.Query().Get("service")
+	if err := validateName(svc); err != nil {
+		http.Error(w, "service: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if svc == a.Info.Service {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(a.selfProviders()) //nolint:errcheck
+		return
+	}
+
+	// Other services write their provider stack to Redis on connect.
+	raw, err := a.store.Get(r.Context(), store.ProvidersKey(svc))
+	if err != nil || raw == "" {
+		http.Error(w, "providers not found for service: "+svc, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(raw)) //nolint:errcheck
 }

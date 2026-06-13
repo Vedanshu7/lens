@@ -192,26 +192,37 @@ func (o *sqlObserver) ensureSchema(ctx context.Context) error {
 	var err error
 	switch o.driver {
 	case "postgres":
-		create = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id          BIGSERIAL PRIMARY KEY,
-			ts          TIMESTAMPTZ      NOT NULL,
-			service     VARCHAR(128)     NOT NULL,
-			instance    VARCHAR(128)     NOT NULL,
-			kind        VARCHAR(32)      NOT NULL,
-			transport   VARCHAR(32),
-			success     BOOLEAN          NOT NULL DEFAULT false,
-			error       TEXT,
-			latency_ms  DOUBLE PRECISION,
-			confirmed   INT,
-			total       INT,
-			pattern     TEXT,
-			key         TEXT,
-			peer_id     VARCHAR(128),
-			meta        JSONB
-		);
-		CREATE INDEX IF NOT EXISTS %s_service_ts ON %s (service, ts);
-		CREATE INDEX IF NOT EXISTS %s_kind_ts    ON %s (kind, ts);`,
-			o.table, o.table, o.table, o.table, o.table)
+		stmts := []string{
+			fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+				id          BIGSERIAL PRIMARY KEY,
+				ts          TIMESTAMPTZ      NOT NULL,
+				service     VARCHAR(128)     NOT NULL,
+				instance    VARCHAR(128)     NOT NULL,
+				kind        VARCHAR(32)      NOT NULL,
+				transport   VARCHAR(32),
+				success     BOOLEAN          NOT NULL DEFAULT false,
+				error       TEXT,
+				latency_ms  DOUBLE PRECISION,
+				confirmed   INT,
+				total       INT,
+				pattern     TEXT,
+				key         TEXT,
+				peer_id     VARCHAR(128),
+				meta        JSONB
+			)`, o.table),
+			fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s_service_ts ON %s (service, ts)`, o.table, o.table),
+			fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s_kind_ts ON %s (kind, ts)`, o.table, o.table),
+		}
+		for _, stmt := range stmts {
+			if _, execErr := o.db.ExecContext(ctx, stmt); execErr != nil {
+				// 42P07 = duplicate_table, 42P16 = invalid_table_definition; both mean
+				// another instance already ran this DDL concurrently — safe to ignore.
+				if !isPGDuplicateErr(execErr) {
+					return execErr
+				}
+			}
+		}
+		return nil
 	case "mysql":
 		create = "CREATE TABLE IF NOT EXISTS " + o.table + ` (
 			id          BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -256,6 +267,29 @@ func (o *sqlObserver) ensureSchema(ctx context.Context) error {
 	}
 	_, err = o.db.ExecContext(ctx, create)
 	return err
+}
+
+// isPGDuplicateErr returns true when err is a PostgreSQL "duplicate object"
+// error (SQLSTATE 42P07 or 23505), which means concurrent DDL already succeeded.
+func isPGDuplicateErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return contains(s, "42P07") || contains(s, "23505") || contains(s, "already exists")
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(s) > 0 && indexStr(s, sub) >= 0)
+}
+
+func indexStr(s, sub string) int {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }
 
 // QueryLatency returns per-minute latency percentiles for invalidation events

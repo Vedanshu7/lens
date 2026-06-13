@@ -43,3 +43,8 @@ func ServiceSetKey(service string) string {
 func ServicesSetKey() string {
 	return KeyPrefix + ":services"
 }
+
+// ProvidersKey returns the key under which a service's provider stack JSON is stored.
+func ProvidersKey(service string) string {
+	return fmt.Sprintf("%s:providers:%s", KeyPrefix, service)
+}

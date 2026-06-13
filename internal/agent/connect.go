@@ -60,6 +60,13 @@ func (a *Agent) dial(ctx context.Context) error {
 	a.Info = info
 	slog.Info("connected to target", "service", info.Service, "instance", info.Instance)
 
+	// Publish provider stack and service name to Redis so any peer (even on a
+	// different transport/gossip cluster) can discover this service and its stack.
+	if provJSON, err := json.Marshal(a.selfProviders()); err == nil {
+		a.store.Set(ctx, store.ProvidersKey(info.Service), string(provJSON), 24*time.Hour) //nolint:errcheck
+	}
+	a.store.SAdd(ctx, store.ServicesSetKey(), info.Service) //nolint:errcheck
+
 	if a.transport == nil {
 		t, err := itransport.New(a, a.Config.Transport, a.Config.TransportConfig)
 		if err != nil {
