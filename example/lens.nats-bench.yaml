@@ -1,0 +1,30 @@
+apiVersion: lens/v1
+kind: Config
+
+transport:
+  provider: nats
+  config:
+    natsUrl: "nats://nats:4222"
+
+persistence:
+  provider: natskv
+  config:
+    natsUrl: "nats://nats:4222"
+
+discovery:
+  provider: nats
+  config:
+    natsUrl: "nats://nats:4222"
+
+observer:
+  enabled: true
+  providers:
+    - name: sql
+      config:
+        driver: postgres
+        dsn: "postgres://lens:lens@postgres:5432/lens?sslmode=disable"
+
+agent:
+  port: "8900"
+  bindAddr: "0.0.0.0"
+  logLevel: info

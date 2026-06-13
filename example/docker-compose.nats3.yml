@@ -1,0 +1,67 @@
+# 3-pod NATS bench stack — runs alongside the gRPC stack for side-by-side comparison.
+#
+# Service name: demo-nats  (shows up separately in the Lens dashboard)
+# Transport:    NATS
+# Ports:
+#   napp-1  HTTP  :8121
+#   napp-2  HTTP  :8122
+#   napp-3  HTTP  :8123
+#   nlens-1 HTTP  :8921  (sidecar API)
+#   nlens-2 HTTP  :8922
+#   nlens-3 HTTP  :8923
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.nats3.yml up --build -d
+
+services:
+
+  nats:
+    image: nats:2-alpine
+    command: ["-js"]
+    ports:
+      - "4222:4222"
+
+  napp-1:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo-nats, APP_INSTANCE: napp-1, LENS_URL: "http://nlens-1:8900" }
+    ports: ["8121:8080"]
+    depends_on: { nlens-1: { condition: service_started } }
+
+  nlens-1:
+    build: { context: ../, args: { LENS_TAGS: "lens_nats lens_natsdiscovery lens_natskv" } }
+    volumes: ["./lens.nats-bench.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://napp-1:8080", LENS_ADVERTISE_ADDR: nlens-1 }
+    ports: ["8921:8900"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+
+  napp-2:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo-nats, APP_INSTANCE: napp-2, LENS_URL: "http://nlens-2:8900" }
+    ports: ["8122:8080"]
+    depends_on: { nlens-2: { condition: service_started } }
+
+  nlens-2:
+    build: { context: ../, args: { LENS_TAGS: "lens_nats lens_natsdiscovery lens_natskv" } }
+    volumes: ["./lens.nats-bench.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://napp-2:8080", LENS_ADVERTISE_ADDR: nlens-2 }
+    ports: ["8922:8900"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }
+
+  napp-3:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo-nats, APP_INSTANCE: napp-3, LENS_URL: "http://nlens-3:8900" }
+    ports: ["8123:8080"]
+    depends_on: { nlens-3: { condition: service_started } }
+
+  nlens-3:
+    build: { context: ../, args: { LENS_TAGS: "lens_nats lens_natsdiscovery lens_natskv" } }
+    volumes: ["./lens.nats-bench.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://napp-3:8080", LENS_ADVERTISE_ADDR: nlens-3 }
+    ports: ["8923:8900"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats: { condition: service_started }

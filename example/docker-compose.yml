@@ -1,19 +1,14 @@
-# Lens local demo stack
-#
-# Starts two app replicas each with a dedicated Lens sidecar, Redis (persistence
-# + memberlist bootstrap), and PostgreSQL (SQL observability).
+# Lens local demo stack — 10 app replicas each with a dedicated Lens sidecar.
 #
 # Usage:
-#   docker compose up --build
+#   docker compose up --build -d
 #
 # Switch to NATS transport:
-#   docker compose -f docker-compose.yml -f docker-compose.nats.yml up --build
+#   docker compose -f docker-compose.yml -f docker-compose.nats.yml up --build -d
 #
 # Ports exposed on localhost:
-#   app-1  HTTP  :8081
-#   app-2  HTTP  :8082
-#   lens-1 HTTP  :8901  (sidecar API + Prometheus metrics)
-#   lens-2 HTTP  :8902
+#   app-N  HTTP  :808N   (N=1..9, app-10 -> :8090)
+#   lens-N HTTP  :890N   (N=1..9, lens-10 -> :8910)
 #   redis        :6379
 #   postgres     :5432
 
@@ -46,71 +41,155 @@ services:
       retries: 10
 
   # ---------------------------------------------------------------------------
-  # App replicas (the demo target service)
+  # App + Sidecar pairs 1-10
   # ---------------------------------------------------------------------------
 
   app-1:
-    build:
-      context: ./app
-    environment:
-      APP_SERVICE: demo
-      APP_INSTANCE: app-1
-      LENS_URL: http://lens-1:8900
-    ports:
-      - "8081:8080"
-    depends_on:
-      lens-1:
-        condition: service_started
-
-  app-2:
-    build:
-      context: ./app
-    environment:
-      APP_SERVICE: demo
-      APP_INSTANCE: app-2
-      LENS_URL: http://lens-2:8900
-    ports:
-      - "8082:8080"
-    depends_on:
-      lens-2:
-        condition: service_started
-
-  # ---------------------------------------------------------------------------
-  # Lens sidecars
-  # ---------------------------------------------------------------------------
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-1, LENS_URL: "http://lens-1:8900" }
+    ports: ["8081:8080"]
+    depends_on: { lens-1: { condition: service_started } }
 
   lens-1:
-    build:
-      context: ../
-      args:
-        LENS_TAGS: "lens_grpc lens_memberlist"
-    volumes:
-      - ./lens.yaml:/etc/lens/lens.yaml:ro
-    environment:
-      LENS_TARGET_URL: http://app-1:8080
-      LENS_ADVERTISE_ADDR: lens-1
-    ports:
-      - "8901:8900"
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-1:8080", LENS_ADVERTISE_ADDR: lens-1 }
+    ports: ["8901:8900"]
     depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  app-2:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-2, LENS_URL: "http://lens-2:8900" }
+    ports: ["8082:8080"]
+    depends_on: { lens-2: { condition: service_started } }
 
   lens-2:
-    build:
-      context: ../
-      args:
-        LENS_TAGS: "lens_grpc lens_memberlist"
-    volumes:
-      - ./lens.yaml:/etc/lens/lens.yaml:ro
-    environment:
-      LENS_TARGET_URL: http://app-2:8080
-      LENS_ADVERTISE_ADDR: lens-2
-    ports:
-      - "8902:8900"
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-2:8080", LENS_ADVERTISE_ADDR: lens-2 }
+    ports: ["8902:8900"]
     depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  app-3:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-3, LENS_URL: "http://lens-3:8900" }
+    ports: ["8083:8080"]
+    depends_on: { lens-3: { condition: service_started } }
+
+  lens-3:
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-3:8080", LENS_ADVERTISE_ADDR: lens-3 }
+    ports: ["8903:8900"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  app-4:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-4, LENS_URL: "http://lens-4:8900" }
+    ports: ["8084:8080"]
+    depends_on: { lens-4: { condition: service_started } }
+
+  lens-4:
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-4:8080", LENS_ADVERTISE_ADDR: lens-4 }
+    ports: ["8904:8900"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  app-5:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-5, LENS_URL: "http://lens-5:8900" }
+    ports: ["8085:8080"]
+    depends_on: { lens-5: { condition: service_started } }
+
+  lens-5:
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-5:8080", LENS_ADVERTISE_ADDR: lens-5 }
+    ports: ["8905:8900"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  app-6:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-6, LENS_URL: "http://lens-6:8900" }
+    ports: ["8086:8080"]
+    depends_on: { lens-6: { condition: service_started } }
+
+  lens-6:
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-6:8080", LENS_ADVERTISE_ADDR: lens-6 }
+    ports: ["8906:8900"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  app-7:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-7, LENS_URL: "http://lens-7:8900" }
+    ports: ["8087:8080"]
+    depends_on: { lens-7: { condition: service_started } }
+
+  lens-7:
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-7:8080", LENS_ADVERTISE_ADDR: lens-7 }
+    ports: ["8907:8900"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  app-8:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-8, LENS_URL: "http://lens-8:8900" }
+    ports: ["8088:8080"]
+    depends_on: { lens-8: { condition: service_started } }
+
+  lens-8:
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-8:8080", LENS_ADVERTISE_ADDR: lens-8 }
+    ports: ["8908:8900"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  app-9:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-9, LENS_URL: "http://lens-9:8900" }
+    ports: ["8089:8080"]
+    depends_on: { lens-9: { condition: service_started } }
+
+  lens-9:
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-9:8080", LENS_ADVERTISE_ADDR: lens-9 }
+    ports: ["8909:8900"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  app-10:
+    build: { context: ./app }
+    environment: { APP_SERVICE: demo, APP_INSTANCE: app-10, LENS_URL: "http://lens-10:8900" }
+    ports: ["8090:8080"]
+    depends_on: { lens-10: { condition: service_started } }
+
+  lens-10:
+    build: { context: ../, args: { LENS_TAGS: "lens_grpc lens_memberlist" } }
+    volumes: ["./lens.yaml:/etc/lens/lens.yaml:ro"]
+    environment: { LENS_TARGET_URL: "http://app-10:8080", LENS_ADVERTISE_ADDR: lens-10 }
+    ports: ["8910:8900"]
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
