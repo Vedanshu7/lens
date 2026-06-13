@@ -7,6 +7,7 @@ package memberlistdiscovery
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net"
 	"strings"
@@ -166,7 +167,7 @@ func (r *mlResolver) bootstrapSeeds(ctx context.Context, service, selfInstance s
 		}
 		host := hostFromURL(agentURL)
 		if host != "" {
-			seeds = append(seeds, net.JoinHostPort(host, "7946"))
+			seeds = append(seeds, net.JoinHostPort(host, fmt.Sprintf("%d", r.gossipPort)))
 		}
 	}
 	return seeds, nil
