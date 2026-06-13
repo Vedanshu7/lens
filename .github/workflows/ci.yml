@@ -67,11 +67,11 @@ jobs:
           go-version: "1.25"
           cache: true
 
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --timeout=5m --build-tags "lens_grpc lens_memberlist"
+        run: golangci-lint run --timeout=5m --build-tags "lens_grpc lens_memberlist"
 
   tidy:
     name: go mod tidy
