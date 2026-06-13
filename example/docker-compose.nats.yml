@@ -1,0 +1,44 @@
+# NATS overlay — merge with docker-compose.yml to switch the transport layer.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.nats.yml up --build
+#
+# This overlay:
+#   1. Adds a NATS broker service.
+#   2. Rebuilds lens-1 and lens-2 with lens_nats instead of lens_grpc.
+#   3. Mounts lens.nats.yaml so the sidecar uses nats as the transport provider.
+#
+# Everything else (Redis, PostgreSQL, apps, SQL observability) stays identical.
+
+services:
+
+  nats:
+    image: nats:2-alpine
+    ports:
+      - "4222:4222"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      retries: 5
+
+  lens-1:
+    build:
+      context: ../
+      args:
+        LENS_TAGS: "lens_nats lens_memberlist"
+    volumes:
+      - ./lens.nats.yaml:/etc/lens/lens.yaml:ro
+    depends_on:
+      nats:
+        condition: service_healthy
+
+  lens-2:
+    build:
+      context: ../
+      args:
+        LENS_TAGS: "lens_nats lens_memberlist"
+    volumes:
+      - ./lens.nats.yaml:/etc/lens/lens.yaml:ro
+    depends_on:
+      nats:
+        condition: service_healthy

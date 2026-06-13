@@ -1,0 +1,47 @@
+# App HTTP — stable ClusterIP for ingress / internal traffic
+apiVersion: v1
+kind: Service
+metadata:
+  name: lens-demo
+  namespace: lens-demo
+spec:
+  selector:
+    app: lens-demo
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+# Lens sidecar HTTP and gRPC — accessible within the cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: lens-sidecar
+  namespace: lens-demo
+spec:
+  selector:
+    app: lens-demo
+  ports:
+    - name: lens-http
+      port: 8900
+      targetPort: 8900
+    - name: lens-grpc
+      port: 8901
+      targetPort: 8901
+---
+# Headless service — lets memberlist gossip resolve peer pod IPs via DNS.
+# Each pod registers its IP; other pods join via this DNS name on startup.
+apiVersion: v1
+kind: Service
+metadata:
+  name: lens-gossip
+  namespace: lens-demo
+spec:
+  clusterIP: None
+  selector:
+    app: lens-demo
+  ports:
+    - name: gossip
+      port: 7946
+      targetPort: 7946
+      protocol: UDP

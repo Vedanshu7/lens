@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lens-config
+  namespace: lens-demo
+data:
+  lens.yaml: |
+    apiVersion: lens.io/v1alpha1
+    kind: SidecarConfig
+
+    transport:
+      provider: grpc
+      config:
+        grpcPort: "8901"
+
+    persistence:
+      provider: redis
+      config:
+        addr: "redis.lens-demo.svc.cluster.local:6379"
+
+    discovery:
+      provider: memberlist
+      config:
+        bindPort: 7946
+
+    observer:
+      enabled: true
+      providers:
+        - name: sql
+          config:
+            driver: postgres
+            dsn: "postgres://lens:lens@postgres.lens-demo.svc.cluster.local:5432/lens?sslmode=disable"
+            table: lens_events
+            batchSize: 100
+            flushIntervalMs: 1000
+        - name: prometheus
+
+    agent:
+      targetURL: "http://localhost:8080"
+      port: "8900"
+      bindAddr: "0.0.0.0"
+      token: ${LENS_TOKEN}
+      logLevel: info
+      replay:
+        enabled: true
+        windowHours: 24

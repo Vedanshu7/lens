@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lens-demo
+  namespace: lens-demo
+  labels:
+    app: lens-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lens-demo
+  template:
+    metadata:
+      labels:
+        app: lens-demo
+    spec:
+      containers:
+
+        # -----------------------------------------------------------------------
+        # Target application
+        # -----------------------------------------------------------------------
+        - name: app
+          image: <YOUR_ECR_REGISTRY>/lens-demo-app:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: APP_SERVICE
+              value: demo
+            - name: APP_INSTANCE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: LENS_URL
+              value: http://localhost:8900
+          readinessProbe:
+            httpGet:
+              path: /api/cache
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+        # -----------------------------------------------------------------------
+        # Lens sidecar
+        # -----------------------------------------------------------------------
+        - name: lens
+          image: <YOUR_ECR_REGISTRY>/lens:grpc
+          ports:
+            - containerPort: 8900
+              name: lens-http
+            - containerPort: 8901
+              name: lens-grpc
+            - containerPort: 7946
+              name: gossip
+              protocol: UDP
+          env:
+            - name: LENS_ADVERTISE_ADDR
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: LENS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lens-secret
+                  key: token
+                  optional: true
+          volumeMounts:
+            - name: lens-config
+              mountPath: /etc/lens
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8900
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+      volumes:
+        - name: lens-config
+          configMap:
+            name: lens-config

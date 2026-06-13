@@ -1,0 +1,38 @@
+apiVersion: lens.io/v1alpha1
+kind: SidecarConfig
+
+transport:
+  provider: nats
+  config:
+    natsUrl: "nats://nats:4222"
+
+persistence:
+  provider: redis
+  config:
+    addr: "redis:6379"
+
+discovery:
+  provider: memberlist
+  config:
+    bindPort: 7946
+
+observer:
+  enabled: true
+  providers:
+    - name: sql
+      config:
+        driver: postgres
+        dsn: "postgres://lens:lens@postgres:5432/lens?sslmode=disable"
+        table: lens_events
+        batchSize: 50
+        flushIntervalMs: 500
+    - name: prometheus
+
+agent:
+  port: "8900"
+  bindAddr: "0.0.0.0"
+  token: ${LENS_TOKEN:-}
+  logLevel: info
+  replay:
+    enabled: true
+    windowHours: 24
