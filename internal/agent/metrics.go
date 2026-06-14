@@ -18,30 +18,33 @@ type Metrics struct {
 	replayApplied      *prometheus.CounterVec
 }
 
-func newMetrics() *Metrics {
+func newMetrics() *Metrics { return newMetricsWithReg(prometheus.DefaultRegisterer) }
+
+func newMetricsWithReg(reg prometheus.Registerer) *Metrics {
+	f := promauto.With(reg)
 	return &Metrics{
-		invalidateTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		invalidateTotal: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "lens_invalidate_total",
 			Help: "Total cache invalidation operations by service and status.",
 		}, []string{"service", "status"}),
-		invalidateDuration: promauto.NewHistogramVec(prometheus.HistogramOpts{
+		invalidateDuration: f.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "lens_invalidate_duration_seconds",
 			Help:    "Duration of invalidation operations in seconds.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"service"}),
-		instancesActive: promauto.NewGaugeVec(prometheus.GaugeOpts{
+		instancesActive: f.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "lens_instances_active",
 			Help: "Number of active instances per service.",
 		}, []string{"service"}),
-		fetchTotal: promauto.NewCounterVec(prometheus.CounterOpts{
+		fetchTotal: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "lens_fetch_total",
 			Help: "Total fetch operations by service and transport.",
 		}, []string{"service", "transport"}),
-		httpRequests: promauto.NewCounterVec(prometheus.CounterOpts{
+		httpRequests: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "lens_http_requests_total",
 			Help: "Total HTTP requests handled by endpoint and status code.",
 		}, []string{"endpoint", "status_code"}),
-		replayApplied: promauto.NewCounterVec(prometheus.CounterOpts{
+		replayApplied: f.NewCounterVec(prometheus.CounterOpts{
 			Name: "lens_replay_applied_total",
 			Help: "Total missed invalidations replayed on agent restart.",
 		}, []string{"service"}),
@@ -56,7 +59,10 @@ type Throttle struct {
 	cooldown time.Duration
 }
 
-func newThrottle(cooldownMS int) *Throttle {
+func newThrottle(cooldownMS int) *Throttle { return NewThrottle(cooldownMS) }
+
+// NewThrottle creates a Throttle with the given cooldown in milliseconds.
+func NewThrottle(cooldownMS int) *Throttle {
 	return &Throttle{
 		lastSeen: make(map[string]time.Time),
 		cooldown: time.Duration(cooldownMS) * time.Millisecond,
