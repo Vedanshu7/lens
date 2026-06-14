@@ -23,7 +23,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: go test -tags "lens_grpc lens_memberlist" ./...
+      - run: go test ./...
 
   sidecar:
     name: sidecar

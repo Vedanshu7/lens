@@ -297,21 +297,14 @@ func (a *Agent) forwardKeys(ctx context.Context, w http.ResponseWriter, r *http.
 	if offset != "" {
 		q.Set("offset", offset)
 	}
-	targetPath := "/internal/lens/keys"
-	if len(q) > 0 {
-		targetPath += "?" + q.Encode()
-	}
-
 	if instance == a.Info.Instance && svc == a.Info.Service {
-		resp, err := a.get(ctx, a.Config.TargetURL+targetPath)
+		body, err := a.targetClient.Keys(ctx, pattern, limit, offset)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("target unreachable: %v", err), http.StatusBadGateway)
 			return
 		}
-		defer closeBody(resp)
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body) //nolint:errcheck
+		w.Write(body) //nolint:errcheck
 		return
 	}
 
@@ -336,7 +329,10 @@ func (a *Agent) forwardKeys(ctx context.Context, w http.ResponseWriter, r *http.
 		http.Error(w, fmt.Sprintf("agent unreachable: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer closeBody(resp)
+	defer func() {
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		resp.Body.Close()              //nolint:errcheck
+	}()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body) //nolint:errcheck
@@ -398,16 +394,14 @@ func (a *Agent) handleFetch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Agent) fetchFromTarget(ctx context.Context, w http.ResponseWriter, key string) {
-	body, _ := json.Marshal(map[string]string{"key": key})
-	resp, err := a.post(ctx, a.Config.TargetURL+"/internal/lens/get", "application/json", strings.NewReader(string(body)))
+	body, err := a.targetClient.Get(ctx, key)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("target unreachable: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer closeBody(resp)
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body) //nolint:errcheck
+	w.WriteHeader(http.StatusOK)
+	w.Write(body) //nolint:errcheck
 }
 
 // InvalidateRequest triggers cache invalidation across all instances of a service.
@@ -457,17 +451,11 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 	localCh := make(chan InstanceResult, 1)
 	if req.Service == a.Info.Service {
 		go func() {
-			resp, err := a.post(ctx,
-				a.Config.TargetURL+"/internal/lens/invalidate",
-				"application/json",
-				strings.NewReader(string(payload)),
-			)
-			if err != nil {
+			if err := a.targetClient.Invalidate(ctx, payload); err != nil {
 				slog.Warn("local invalidation failed", "err", err)
 				localCh <- InstanceResult{Instance: a.Info.Instance, Success: false, Error: err.Error()}
 				return
 			}
-			closeBody(resp)
 			localCh <- InstanceResult{Instance: a.Info.Instance, Success: true}
 		}()
 	}
@@ -594,6 +582,7 @@ func (a *Agent) selfProviders() map[string]any {
 		"transport":   a.Config.Transport,
 		"persistence": a.Config.Persistence,
 		"discovery":   a.Config.Discovery,
+		"target":      a.Config.Target,
 		"observers":   obs,
 	}
 }

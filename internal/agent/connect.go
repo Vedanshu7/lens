@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/Vedanshu7/lens/internal/discovery"
 	"github.com/Vedanshu7/lens/internal/store"
+	"github.com/Vedanshu7/lens/internal/target"
 	itransport "github.com/Vedanshu7/lens/internal/transport"
 )
 
@@ -116,19 +116,9 @@ func (a *Agent) dial(ctx context.Context) error {
 	return nil
 }
 
-// fetchTargetInfo calls /internal/lens/info on the target service and returns
-// the decoded TargetInfo. Returns an error if the request or decoding fails.
-func (a *Agent) fetchTargetInfo(ctx context.Context) (TargetInfo, error) {
-	resp, err := a.get(ctx, a.Config.TargetURL+"/internal/lens/info")
-	if err != nil {
-		return TargetInfo{}, err
-	}
-	defer closeBody(resp)
-	var info TargetInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return TargetInfo{}, err
-	}
-	return info, nil
+// fetchTargetInfo calls the target client's Info method and returns the decoded identity.
+func (a *Agent) fetchTargetInfo(ctx context.Context) (target.TargetInfo, error) {
+	return a.targetClient.Info(ctx)
 }
 
 // deregister writes a checkpoint timestamp and removes this instance from discovery.
@@ -185,16 +175,10 @@ func (a *Agent) replayMissed(ctx context.Context) error {
 		if err != nil || !ts.After(lastSeen) || ts.Before(cutoff) {
 			continue
 		}
-		resp, err := a.post(ctx,
-			a.Config.TargetURL+"/internal/lens/invalidate",
-			"application/json",
-			strings.NewReader(string(e.Payload)),
-		)
-		if err != nil {
+		if err := a.targetClient.Invalidate(ctx, e.Payload); err != nil {
 			slog.Warn("replay invalidation failed", "err", err)
 			continue
 		}
-		closeBody(resp)
 		applied++
 		a.Metrics.replayApplied.WithLabelValues(a.Info.Service).Inc()
 	}

@@ -1,5 +1,3 @@
-//go:build lens_natskv
-
 // Package natskv implements the persistence Backend using NATS JetStream KeyValue.
 // Strings, lists, hashes, and sets are all stored in a single JetStream KV
 // bucket named "lens". Each data type uses a key prefix (v:, l:, h:, s:) to
