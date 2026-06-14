@@ -64,9 +64,15 @@ Always include the project prefix and linked issue number:
 ### 4. Run all checks locally
 
 ```bash
-go build -tags "lens_grpc lens_memberlist" ./...
-go test  -tags "lens_grpc lens_memberlist" -race ./...
-go vet   ./...
+# Install the build tool if you haven't already
+go install ./cmd/lens-build
+
+# Build the binary from your lens.yaml
+lens-build
+
+# Run tests and vet
+go test -race ./...
+go vet ./...
 go mod tidy
 ```
 
@@ -88,7 +94,7 @@ Push to your fork and open a PR against `Vedanshu7/lens:main`. Fill in the PR te
 
 ## Adding a New Provider
 
-Providers are the most common contribution. Each layer has a clean interface — implement it and register in `init()`.
+Providers are the most common contribution. Each layer has a clean interface — implement it and register in `init()`. No build tags, no stub files.
 
 ### File structure
 
@@ -98,13 +104,25 @@ internal/<layer>/<providername>/
 ```
 
 ```go
-// providers_<name>.go at repo root
-//go:build lens_<name>
+// The entire file — no build tag needed
+package myprovider
 
-package main
+import "github.com/Vedanshu7/lens/internal/<layer>"
 
-import _ "github.com/vedanshu/lens/internal/<layer>/<providername>"
+func init() {
+    <layer>.Register("my-provider", func(cfg map[string]any) (<layer>.Interface, error) {
+        return newMyProvider(cfg)
+    })
+}
 ```
+
+Then add one line to `cmd/lens-build/main.go` in the appropriate layer map:
+
+```go
+"my-provider": "github.com/Vedanshu7/lens/internal/<layer>/myprovider",
+```
+
+That's it. `lens-build` will include it automatically when `lens.yaml` requests it.
 
 ### Layer interfaces
 
@@ -114,14 +132,14 @@ import _ "github.com/vedanshu/lens/internal/<layer>/<providername>"
 | Discovery | `discovery.Resolver` | `discovery.Register("name", factory)` |
 | Persistence | `persistence.Backend` | `persistence.Register("name", factory)` |
 | Observability | `observability.Observer` | `observability.Register("name", factory)` |
+| Target | `target.TargetClient` | `target.Register("name", factory)` |
 
 ### Provider checklist
 
-- [ ] Build tag: `//go:build lens_<name>` at top of implementation file
-- [ ] `init()` calls the appropriate `Register()` function
-- [ ] `providers_<name>.go` created at repo root with matching build tag
+- [ ] `init()` calls the appropriate `Register()` function — no build tag
+- [ ] One entry added to the layer map in `cmd/lens-build/main.go`
 - [ ] At least one test
-- [ ] README provider table updated with name, build tag, and "best for" description
+- [ ] README provider table updated with name and "best for" description
 - [ ] `lens.yaml` config options documented if the provider accepts config
 
 ---
@@ -160,11 +178,11 @@ All checks must be green before a review will be assigned:
 
 | Check | What it runs |
 |---|---|
-| `Build & Vet (1.25)` | `go build` + `go vet` with both gRPC and NATS build tag sets |
+| `Build & Vet (1.25)` | `lens-build` + `go vet ./...` |
 | `Test` | `go test -race ./...` |
 | `Lint` | `golangci-lint run` |
 | `go mod tidy` | Fails if `go.mod` / `go.sum` are not clean |
-| `sidecar` | Multi-arch Docker build of the sidecar binary |
+| `sidecar` | Multi-arch Docker build of the sidecar binary via `lens-build` |
 | `dashboard` | Multi-arch Docker build of the React dashboard |
 
 ---

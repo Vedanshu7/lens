@@ -1,5 +1,3 @@
-//go:build lens_static
-
 // Package staticdiscovery implements a discovery provider backed by a fixed seed list.
 // Peers are known at startup and never change; this provider emits Join events for
 // each seed when Watch is called, then leaves the channel idle. Use it for

@@ -1,5 +1,3 @@
-//go:build lens_otel
-
 // Package otelobserver exports Lens telemetry events via OpenTelemetry (OTLP).
 // Supports any OTLP-compatible backend: Jaeger, Grafana Tempo, Datadog,
 // Honeycomb, New Relic, Dynatrace, and others.

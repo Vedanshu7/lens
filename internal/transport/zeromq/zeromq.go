@@ -1,5 +1,3 @@
-//go:build lens_zmq
-
 // Package zeromqtransport implements the Transport interface using ZeroMQ sockets.
 // Each sidecar binds a ROUTER socket to receive incoming messages and maintains
 // a pool of DEALER sockets for outbound connections to peer ROUTER endpoints.
