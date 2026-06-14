@@ -1,5 +1,3 @@
-//go:build lens_redisstreams
-
 // Package redistreamstransport implements the Transport interface using Redis Streams.
 // Broadcast messages are XADD'd to a per-service stream and consumed by all
 // instances via XREADGROUP. Point-to-point Get uses a per-instance request stream

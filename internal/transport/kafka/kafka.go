@@ -1,5 +1,3 @@
-//go:build lens_kafka
-
 // Package kafkatransport implements the Transport interface using Apache Kafka.
 // Broadcast messages are published to a per-service topic consumed by all
 // replicas. Point-to-point Get uses a per-instance request topic and a

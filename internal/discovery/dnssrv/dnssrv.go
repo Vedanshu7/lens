@@ -1,5 +1,3 @@
-//go:build lens_dnssrv
-
 // Package dnssrvdiscovery implements peer discovery by polling DNS SRV records.
 // It requires no external infrastructure beyond a DNS server that returns
 // SRV records under _lens._tcp.<service>.<domain>. Peers are discovered

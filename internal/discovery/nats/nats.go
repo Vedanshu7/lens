@@ -1,5 +1,3 @@
-//go:build lens_natsdiscovery
-
 // Package natsdiscovery implements peer discovery using NATS core pub/sub.
 // Each instance publishes periodic heartbeats on lens.presence.{service}.
 // A background goroutine tracks last-seen timestamps and emits leave events

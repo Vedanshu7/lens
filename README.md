@@ -1,6 +1,6 @@
 # Lens
 
-A Go sidecar framework with four independently swappable layers: **transport**, **discovery**, **persistence**, and **observability**.
+A Go sidecar framework with five independently swappable layers: **transport**, **discovery**, **persistence**, **observability**, and **target**.
 
 Pick any provider for each layer. Combine them freely. Switch at config time with no code changes.
 
@@ -10,47 +10,47 @@ Pick any provider for each layer. Combine them freely. Switch at config time wit
 
 ### Transport — how pods broadcast to each other
 
-| Provider | Build tag | Best for |
-|---|---|---|
-| `grpc` | `lens_grpc` | Direct pod-to-pod, lowest latency, no broker required |
-| `nats` | `lens_nats` | Broker fan-out, pods behind NAT or in separate subnets |
-| `kafka` | `lens_kafka` | High-throughput fan-out, Kafka already in stack |
-| `zeromq` | `lens_zmq` | Brokerless pub/sub, minimal footprint |
-| `redis-streams` | `lens_redisstreams` | Reuses an existing Redis instance, zero extra infra |
+| Provider | Best for |
+|---|---|
+| `grpc` | Direct pod-to-pod, lowest latency, no broker required |
+| `nats` | Broker fan-out, pods behind NAT or in separate subnets |
+| `kafka` | High-throughput fan-out, Kafka already in stack |
+| `zeromq` | Brokerless pub/sub, minimal footprint |
+| `redis-streams` | Reuses an existing Redis instance, zero extra infra |
 
 ### Discovery — how pods find each other
 
-| Provider | Build tag | Best for |
-|---|---|---|
-| `memberlist` | `lens_memberlist` | Gossip over UDP, zero infrastructure |
-| `nats` | `lens_natsdiscovery` | Uses the same broker already running for transport |
-| `dnssrv` | `lens_dnssrv` | Kubernetes headless services, Consul DNS |
-| `static` | `lens_static` | Fixed known peer list, no infrastructure |
+| Provider | Best for |
+|---|---|
+| `memberlist` | Gossip over UDP, zero infrastructure |
+| `nats` | Uses the same broker already running for transport |
+| `dnssrv` | Kubernetes headless services, Consul DNS |
+| `static` | Fixed known peer list, no infrastructure |
 
 ### Persistence — replay log, audit trail, shared metadata
 
-| Provider | Build tag | Best for |
-|---|---|---|
-| `redis` | _(always compiled)_ | Production default, durable, widely available |
-| `natskv` | `lens_natskv` | All-NATS stack, uses JetStream KV — no Redis needed |
-| `memory` | _(always compiled)_ | Local dev and tests, zero infrastructure |
+| Provider | Best for |
+|---|---|
+| `redis` | Production default, durable, widely available. Always compiled in. |
+| `natskv` | All-NATS stack, uses JetStream KV — no Redis needed |
+| `memory` | Local dev and tests, zero infrastructure. Always compiled in. |
 
 ### Observability — multiple providers can run simultaneously
 
-| Provider | Build tag | What it does |
-|---|---|---|
-| `sql` | _(always compiled)_ | Structured events to SQLite, PostgreSQL, or MySQL. Powers the dashboard. |
-| `prometheus` | _(always compiled)_ | Scrape endpoint at `/metrics` |
-| `otel` | `lens_otel` | OTLP traces and metrics to any OpenTelemetry collector |
-| `webhook` | _(always compiled)_ | HTTP POST on every event to a configurable URL |
-| `stdout` | _(always compiled)_ | JSON lines to stdout, feeds any log aggregation pipeline |
-| `noop` | _(always compiled)_ | Discard all events (default when no provider is configured) |
+| Provider | What it does |
+|---|---|
+| `sql` | Structured events to SQLite, PostgreSQL, or MySQL. Powers the dashboard. Always compiled in. |
+| `prometheus` | Scrape endpoint at `/metrics`. Always compiled in. |
+| `otel` | OTLP traces and metrics to any OpenTelemetry collector |
+| `webhook` | HTTP POST on every event to a configurable URL. Always compiled in. |
+| `stdout` | JSON lines to stdout, feeds any log aggregation pipeline. Always compiled in. |
+| `noop` | Discard all events (default when no provider is configured). Always compiled in. |
 
 ### Target — how the sidecar talks to its co-located app
 
 | Provider | Best for |
 |---|---|
-| `http` | Default. Plain HTTP over TCP to `LENS_TARGET_URL`. Always compiled in. |
+| `http` | Default. Plain HTTP over TCP. Always compiled in. |
 | `unix` | Same HTTP contract over a Unix domain socket — zero TCP overhead for same-host calls. |
 | `grpc` | gRPC via the `LensTarget` proto service. Lowest overhead, strongly typed. |
 
@@ -99,13 +99,9 @@ graph TD
 
 ## Example stacks
 
-The same codebase, different build tags, different config — no logic changes.
+The same codebase, different `lens.yaml` — no code or build changes.
 
 ### Minimal (zero external infrastructure)
-
-```bash
-go build -tags "lens_grpc lens_memberlist" -o lens .
-```
 
 ```yaml
 transport:   { provider: grpc }
@@ -113,11 +109,11 @@ persistence: { provider: memory }
 discovery:   { provider: memberlist }
 ```
 
-### Production (durable store + metrics)
-
 ```bash
-go build -tags "lens_grpc lens_memberlist" -o lens .
+lens-build
 ```
+
+### Production (durable store + metrics)
 
 ```yaml
 transport:
@@ -140,16 +136,20 @@ observer:
     - name: prometheus
 ```
 
-### All-in-one broker (single NATS server for every layer)
-
 ```bash
-go build -tags "lens_nats lens_natsdiscovery lens_natskv" -o lens .
+lens-build
 ```
+
+### All-in-one broker (single NATS server for every layer)
 
 ```yaml
 transport:   { provider: nats,   config: { natsUrl: "nats://broker:4222" } }
 persistence: { provider: natskv, config: { natsUrl: "nats://broker:4222" } }
 discovery:   { provider: nats,   config: { natsUrl: "nats://broker:4222" } }
+```
+
+```bash
+lens-build
 ```
 
 ---
@@ -262,20 +262,21 @@ func init() {
 ```
 
 ```go
-// 2. Blank import in a providers_myprovider.go file at the root
-//go:build lens_myprovider
+// 2. Add one entry to the import map in cmd/lens-build/main.go
+"my-provider": "github.com/Vedanshu7/lens/internal/transport/myprovider",
+```
 
-package main
-
-import _ "github.com/vedanshu/lens/internal/transport/myprovider"
+```yaml
+# 3. Set it in lens.yaml and rebuild
+transport:
+  provider: my-provider
 ```
 
 ```bash
-# 3. Include the build tag when compiling
-go build -tags "lens_grpc lens_memberlist lens_myprovider" -o lens .
+lens-build
 ```
 
-No changes anywhere else in the codebase.
+No build tags. No stub files. No Makefile changes.
 
 ---
 
@@ -385,19 +386,22 @@ agent:
 
 ## Building from source
 
+Install `lens-build` once, then use it to compile a binary containing only the providers declared in your `lens.yaml`.
+
 ```bash
 git clone https://github.com/Vedanshu7/lens.git
 cd lens
 
-# Default build (gRPC transport, memberlist discovery)
-go build -tags "lens_grpc lens_memberlist" -o lens .
+# Install the build tool
+go install ./cmd/lens-build
 
-# All-NATS build
-go build -tags "lens_nats lens_natsdiscovery lens_natskv" -o lens .
-
-# With OpenTelemetry
-go build -tags "lens_grpc lens_memberlist lens_otel" -o lens .
+# Write your lens.yaml, then build
+lens-build                          # outputs ./lens
+lens-build -output /usr/local/bin/lens
+lens-build -dry-run                 # preview what will be compiled
 ```
+
+`lens-build` reads `lens.yaml`, generates a minimal import file for the configured providers, runs `go build`, and cleans up. The binary contains only what the config asked for.
 
 Minimum Go version: **1.24**
 
