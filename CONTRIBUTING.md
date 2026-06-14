@@ -20,6 +20,20 @@ Thank you for contributing. Please read this fully before opening a PR.
 
 Discuss the approach before writing code. PRs without a linked issue may be closed.
 
+**Issue title format:**
+
+```
+[Type]: Short description
+```
+
+| Type | When to use | Example |
+|---|---|---|
+| `[Feat]` | New provider or feature | `[Feat]: Add Consul discovery provider` |
+| `[Fix]` | Bug or incorrect behaviour | `[Fix]: memberlist fails to rejoin after restart` |
+| `[Test]` | Test coverage | `[Test]: Add layer independence matrix tests` |
+| `[Docs]` | Documentation only | `[Docs]: Document all-NATS stack configuration` |
+| `[Chore]` | Maintenance, deps, CI | `[Chore]: Bump golangci-lint to v2.x` |
+
 ### 2. Fork and clone
 
 ```bash
