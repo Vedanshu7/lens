@@ -62,8 +62,8 @@ func (b *backend) Del(_ context.Context, keys ...string) error {
 func (b *backend) LPush(_ context.Context, key string, vals ...string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for i := len(vals) - 1; i >= 0; i-- {
-		b.lists[key] = append([]string{vals[i]}, b.lists[key]...)
+	for _, v := range vals {
+		b.lists[key] = append([]string{v}, b.lists[key]...)
 	}
 	return nil
 }

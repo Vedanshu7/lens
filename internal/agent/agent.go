@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/Vedanshu7/lens/config"
 	"github.com/Vedanshu7/lens/internal/discovery"
 	"github.com/Vedanshu7/lens/internal/observability"
@@ -338,6 +339,39 @@ func New(cfg Config) *Agent {
 		Throttle:     newThrottle(cfg.CooldownMS),
 	}
 }
+
+// NewFromDeps constructs an Agent with pre-built dependencies injected directly.
+// Use in tests or embedding scenarios where the factory registry is not needed.
+// The agent is marked live immediately; no dial() call is required.
+func NewFromDeps(cfg Config, store persistence.Backend, tc target.TargetClient, tr transport.Transport, disc discovery.Resolver, info target.TargetInfo) *Agent {
+	a := &Agent{
+		Config:       cfg,
+		Info:         info,
+		store:        store,
+		targetClient: tc,
+		transport:    tr,
+		disc:         disc,
+		Obs:          observability.NewMultiObserver(nil),
+		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
+		Metrics:      newMetricsWithReg(prometheus.NewRegistry()),
+		Throttle:     newThrottle(cfg.CooldownMS),
+		reconnectCh:  make(chan struct{}, 1),
+	}
+	a.live.Store(true)
+	return a
+}
+
+// SetReady marks the agent as live (true) or not-live (false).
+// Intended for tests that need to verify not-ready behaviour.
+func (a *Agent) SetReady(v bool) { a.live.Store(v) }
+
+// ValidateConfig checks that all provider names in cfg are registered.
+// Returns a descriptive error when a required provider is missing.
+func ValidateConfig(cfg Config) error { return validateConfig(cfg) }
+
+// WatchPeers consumes eventCh and keeps the in-memory peer map up to date.
+// Exported so integration tests can drive peer events without a real discovery provider.
+func (a *Agent) WatchPeers(eventCh <-chan discovery.Event) { a.watchPeers(eventCh) }
 
 // Shutdown cancels in-flight connections, deregisters this instance from
 // discovery, and closes all providers.

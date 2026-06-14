@@ -116,6 +116,10 @@ func (a *Agent) dial(ctx context.Context) error {
 	return nil
 }
 
+// Dial verifies persistence, resolves target identity, and marks the agent live.
+// Exported so integration tests can drive the connection lifecycle directly.
+func (a *Agent) Dial(ctx context.Context) error { return a.dial(ctx) }
+
 // fetchTargetInfo calls the target client's Info method and returns the decoded identity.
 func (a *Agent) fetchTargetInfo(ctx context.Context) (target.TargetInfo, error) {
 	return a.targetClient.Info(ctx)
