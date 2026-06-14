@@ -297,11 +297,6 @@ func (a *Agent) forwardKeys(ctx context.Context, w http.ResponseWriter, r *http.
 	if offset != "" {
 		q.Set("offset", offset)
 	}
-	targetPath := "/internal/lens/keys"
-	if len(q) > 0 {
-		targetPath += "?" + q.Encode()
-	}
-
 	if instance == a.Info.Instance && svc == a.Info.Service {
 		body, err := a.targetClient.Keys(ctx, pattern, limit, offset)
 		if err != nil {
