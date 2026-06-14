@@ -1,4 +1,4 @@
-package unit_test
+package agent_test
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 	"github.com/Vedanshu7/lens/test/testutil"
 )
 
-// newBroadcastAgent builds a minimal agent wired with a custom target client.
 func newBroadcastAgent(t *testing.T, tc *testutil.StubTargetClient) *agent.Agent {
 	t.Helper()
 	store, err := persistence.New("memory", nil)
@@ -23,8 +22,7 @@ func newBroadcastAgent(t *testing.T, tc *testutil.StubTargetClient) *agent.Agent
 	}
 	a := agent.NewFromDeps(
 		agent.Config{CooldownMS: 0},
-		store,
-		tc,
+		store, tc,
 		&testutil.StubTransport{},
 		&testutil.StubResolver{},
 		target.TargetInfo{Service: "svc", Instance: "inst"},
@@ -48,12 +46,11 @@ func TestApplyInvalidation_SucceedsFirstAttempt(t *testing.T) {
 	}
 }
 
-func TestApplyInvalidation_RetriesOnFailure(t *testing.T) {
+func TestApplyInvalidation_RetriesOnTransientFailure(t *testing.T) {
 	var calls atomic.Int32
 	tc := &testutil.StubTargetClient{
 		InvalidateFn: func(_ context.Context, _ []byte) error {
-			n := calls.Add(1)
-			if n < 3 {
+			if calls.Add(1) < 3 {
 				return errors.New("transient error")
 			}
 			return nil
@@ -66,7 +63,7 @@ func TestApplyInvalidation_RetriesOnFailure(t *testing.T) {
 	a.ApplyInvalidation(ctx, []byte(`{}`), "test")
 
 	if calls.Load() != 3 {
-		t.Errorf("Invalidate call count: want 3 (2 failures + 1 success), got %d", calls.Load())
+		t.Errorf("want 3 attempts (2 failures + 1 success), got %d", calls.Load())
 	}
 }
 
@@ -106,7 +103,6 @@ func TestApplyInvalidation_ContextCancellation_StopsRetries(t *testing.T) {
 		a.ApplyInvalidation(ctx, []byte(`{}`), "test")
 	}()
 
-	// cancel after first attempt; retry sleep of 1s means the goroutine is blocked in backoff
 	time.Sleep(20 * time.Millisecond)
 	cancel()
 
@@ -115,7 +111,6 @@ func TestApplyInvalidation_ContextCancellation_StopsRetries(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("ApplyInvalidation did not respect context cancellation within 3s")
 	}
-
 	if calls.Load() > 2 {
 		t.Errorf("expected ≤2 attempts after cancellation, got %d", calls.Load())
 	}

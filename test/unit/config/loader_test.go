@@ -1,4 +1,4 @@
-package unit_test
+package config_test
 
 import (
 	"os"
@@ -21,7 +21,7 @@ func writeYAML(t *testing.T, content string) string {
 	return f.Name()
 }
 
-func TestConfigLoad_BasicFields(t *testing.T) {
+func TestLoad_BasicFields(t *testing.T) {
 	path := writeYAML(t, `
 apiVersion: lens/v1
 transport:
@@ -52,7 +52,7 @@ agent:
 	}
 }
 
-func TestConfigLoad_EnvVarSubstitution(t *testing.T) {
+func TestLoad_EnvVarSubstitution(t *testing.T) {
 	t.Setenv("TEST_NATS_URL", "nats://broker:4222")
 
 	path := writeYAML(t, `
@@ -70,7 +70,7 @@ transport:
 	}
 }
 
-func TestConfigLoad_UnsetEnvVarPreservedLiteral(t *testing.T) {
+func TestLoad_UnsetEnvVar_PreservesLiteral(t *testing.T) {
 	os.Unsetenv("UNSET_VAR_XYZ") //nolint:errcheck
 	path := writeYAML(t, `
 transport:
@@ -87,7 +87,7 @@ transport:
 	}
 }
 
-func TestConfigLoad_EmptyPath(t *testing.T) {
+func TestLoad_EmptyPath_ReturnsZeroFile(t *testing.T) {
 	f, err := config.Load("")
 	if err != nil {
 		t.Fatalf("Load empty path: %v", err)
@@ -97,14 +97,14 @@ func TestConfigLoad_EmptyPath(t *testing.T) {
 	}
 }
 
-func TestConfigLoad_MissingFile(t *testing.T) {
+func TestLoad_MissingFile_ReturnsError(t *testing.T) {
 	_, err := config.Load(filepath.Join(t.TempDir(), "nonexistent.yaml"))
 	if err == nil {
 		t.Fatal("Load missing file: expected error, got nil")
 	}
 }
 
-func TestConfigLoad_ObserverProviders(t *testing.T) {
+func TestLoad_ObserverProviders(t *testing.T) {
 	path := writeYAML(t, `
 observer:
   enabled: true
@@ -127,7 +127,7 @@ observer:
 	}
 }
 
-func TestConfigLoad_TargetBlock(t *testing.T) {
+func TestLoad_TargetBlock(t *testing.T) {
 	path := writeYAML(t, `
 target:
   provider: unix

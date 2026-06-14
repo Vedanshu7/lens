@@ -8,6 +8,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"go/format"
@@ -72,9 +73,14 @@ func main() {
 	}
 
 	// Resolve config path relative to cwd, then load.
+	// A missing file is not fatal: build with always-on providers only.
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Fatalf("lens-build: load config %s: %v", *configPath, err)
+		if errors.Is(err, os.ErrNotExist) {
+			log.Printf("lens-build: %s not found, building with always-on providers only", *configPath)
+		} else {
+			log.Fatalf("lens-build: load config %s: %v", *configPath, err)
+		}
 	}
 
 	// Collect the set of import paths needed.

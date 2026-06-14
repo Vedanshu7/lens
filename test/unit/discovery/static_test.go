@@ -1,4 +1,4 @@
-package unit_test
+package discovery_test
 
 import (
 	"context"
@@ -17,8 +17,11 @@ func newStaticResolver(t *testing.T, seeds []map[string]any) discovery.Resolver 
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
-	cfg := map[string]any{"seeds": toAnySlice(seeds)}
-	r, err := discovery.New(store, "static", cfg)
+	out := make([]any, len(seeds))
+	for i, s := range seeds {
+		out[i] = s
+	}
+	r, err := discovery.New(store, "static", map[string]any{"seeds": out})
 	if err != nil {
 		t.Fatalf("create static resolver: %v", err)
 	}
@@ -26,15 +29,7 @@ func newStaticResolver(t *testing.T, seeds []map[string]any) discovery.Resolver 
 	return r
 }
 
-func toAnySlice(in []map[string]any) []any {
-	out := make([]any, len(in))
-	for i, m := range in {
-		out[i] = m
-	}
-	return out
-}
-
-func TestStatic_Peers_ReturnsSeedsByService(t *testing.T) {
+func TestStatic_Peers_ReturnsByService(t *testing.T) {
 	ctx := context.Background()
 	r := newStaticResolver(t, []map[string]any{
 		{"service": "svc-a", "instance": "inst-1", "agentURL": "http://host1:8080"},
@@ -69,11 +64,8 @@ func TestStatic_Peers_ExcludesSelf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Peers: %v", err)
 	}
-	if len(peers) != 1 {
-		t.Fatalf("want 1 peer (excluding self), got %d: %v", len(peers), peers)
-	}
-	if peers[0].Instance != "peer" {
-		t.Errorf("peer instance: want peer, got %q", peers[0].Instance)
+	if len(peers) != 1 || peers[0].Instance != "peer" {
+		t.Errorf("want 1 peer (peer), got %v", peers)
 	}
 }
 
@@ -114,10 +106,9 @@ func TestStatic_Watch_EmitsJoinEventsForSeeds(t *testing.T) {
 			}
 			received = append(received, ev)
 		case <-timeout:
-			t.Fatalf("timeout waiting for watch events; got %d of 2", len(received))
+			t.Fatalf("timeout waiting for events; got %d of 2", len(received))
 		}
 	}
-
 	for _, ev := range received {
 		if ev.Type != discovery.EventJoin {
 			t.Errorf("event type: want Join, got %v", ev.Type)
@@ -136,6 +127,6 @@ func TestStatic_Deregister_IsNoOp(t *testing.T) {
 	}
 	peers, _ := r.Peers(ctx, "svc")
 	if len(peers) != 1 {
-		t.Error("Deregister should be a no-op; peers were removed")
+		t.Error("Deregister should be no-op; peers were removed")
 	}
 }

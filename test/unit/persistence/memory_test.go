@@ -1,4 +1,4 @@
-package unit_test
+package persistence_test
 
 import (
 	"context"
@@ -52,7 +52,7 @@ func TestMemoryBackend_Del(t *testing.T) {
 	}
 }
 
-func TestMemoryBackend_List(t *testing.T) {
+func TestMemoryBackend_LPush_MatchesRedisSemantics(t *testing.T) {
 	ctx := context.Background()
 	b := newMemBackend(t)
 
@@ -124,7 +124,7 @@ func TestMemoryBackend_HGetAllMulti(t *testing.T) {
 	}
 }
 
-func TestMemoryBackend_Set_Operations(t *testing.T) {
+func TestMemoryBackend_SetOperations(t *testing.T) {
 	ctx := context.Background()
 	b := newMemBackend(t)
 

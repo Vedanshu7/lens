@@ -365,6 +365,14 @@ func NewFromDeps(cfg Config, store persistence.Backend, tc target.TargetClient, 
 // Intended for tests that need to verify not-ready behaviour.
 func (a *Agent) SetReady(v bool) { a.live.Store(v) }
 
+// ValidateConfig checks that all provider names in cfg are registered.
+// Returns a descriptive error when a required provider is missing.
+func ValidateConfig(cfg Config) error { return validateConfig(cfg) }
+
+// WatchPeers consumes eventCh and keeps the in-memory peer map up to date.
+// Exported so integration tests can drive peer events without a real discovery provider.
+func (a *Agent) WatchPeers(eventCh <-chan discovery.Event) { a.watchPeers(eventCh) }
+
 // Shutdown cancels in-flight connections, deregisters this instance from
 // discovery, and closes all providers.
 func (a *Agent) Shutdown(ctx context.Context) {
