@@ -19,6 +19,7 @@ type File struct {
 	Transport   ProviderBlock `yaml:"transport"`
 	Persistence ProviderBlock `yaml:"persistence"`
 	Discovery   ProviderBlock `yaml:"discovery"`
+	Target      ProviderBlock `yaml:"target"`
 	Observer    ObserverBlock `yaml:"observer"`
 	Agent       AgentBlock    `yaml:"agent"`
 }

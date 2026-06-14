@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package lens.target.v1;
+
+option go_package = "github.com/Vedanshu7/lens/internal/proto/targetv1";
+
+// LensTarget is implemented by the application service. The Lens sidecar
+// calls these RPCs instead of the default HTTP endpoints when the
+// target provider is set to "grpc".
+service LensTarget {
+  // Info returns the service identity (name and instance ID).
+  rpc Info(TargetInfoRequest) returns (TargetInfoResponse);
+  // Invalidate removes cache entries matching the given payload.
+  rpc Invalidate(TargetInvalidateRequest) returns (TargetInvalidateResponse);
+  // Get returns the current value of a cache key.
+  rpc Get(TargetGetRequest) returns (TargetGetResponse);
+  // Keys returns cache key metadata, with optional filtering.
+  rpc Keys(TargetKeysRequest) returns (TargetKeysResponse);
+}
+
+message TargetInfoRequest {}
+
+message TargetInfoResponse {
+  string service  = 1;
+  string instance = 2;
+}
+
+message TargetInvalidateRequest {
+  // payload is the JSON-encoded invalidation body, e.g. {"pattern":"key:*"}.
+  bytes payload = 1;
+}
+
+message TargetInvalidateResponse {}
+
+message TargetGetRequest {
+  string key = 1;
+}
+
+message TargetGetResponse {
+  // body is the raw JSON response body from the application cache.
+  bytes body = 1;
+}
+
+message TargetKeysRequest {
+  string pattern = 1;
+  string limit   = 2;
+  string offset  = 3;
+}
+
+message TargetKeysResponse {
+  // body is the raw JSON response body containing the key list.
+  bytes body = 1;
+}

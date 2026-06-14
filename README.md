@@ -46,6 +46,14 @@ Pick any provider for each layer. Combine them freely. Switch at config time wit
 | `stdout` | _(always compiled)_ | JSON lines to stdout, feeds any log aggregation pipeline |
 | `noop` | _(always compiled)_ | Discard all events (default when no provider is configured) |
 
+### Target — how the sidecar talks to its co-located app
+
+| Provider | Best for |
+|---|---|
+| `http` | Default. Plain HTTP over TCP to `LENS_TARGET_URL`. Always compiled in. |
+| `unix` | Same HTTP contract over a Unix domain socket — zero TCP overhead for same-host calls. |
+| `grpc` | gRPC via the `LensTarget` proto service. Lowest overhead, strongly typed. |
+
 ---
 
 ## Provider map
@@ -58,6 +66,7 @@ graph TD
     Agent --> Persistence
     Agent --> Discovery
     Agent --> Observability
+    Agent --> Target
 
     Transport --> grpc[grpc\ndirect pod-to-pod]
     Transport --> nats_t[nats\nbroker fan-out]
@@ -80,6 +89,10 @@ graph TD
     Observability --> webhook[webhook\nHTTP POST events]
     Observability --> stdout[stdout\nJSON log lines]
     Observability --> noop[noop\ndiscard]
+
+    Target --> http_t[http\nplain HTTP default]
+    Target --> unix_t[unix\nUnix socket zero-overhead]
+    Target --> grpc_t[grpc\nproto service]
 ```
 
 ---
@@ -193,7 +206,7 @@ graph LR
 
 ## Integrating your app
 
-Expose three HTTP endpoints on the target app. The sidecar calls these automatically.
+The sidecar calls your app through the configured **target provider** (`http` by default, or `unix`/`grpc` for lower overhead). Expose these endpoints on the app — the contract is the same regardless of which provider is used.
 
 ### Identity endpoint
 
@@ -330,6 +343,13 @@ discovery:
   provider: <name>
   config: <provider-specific>
 
+target:
+  provider: http          # http (default) | unix | grpc
+  config:
+    url: "http://localhost:8080"   # http provider
+    socketPath: /tmp/app.sock      # unix provider
+    grpcAddr: "localhost:8902"     # grpc provider
+
 observer:
   enabled: true
   providers:
@@ -337,7 +357,6 @@ observer:
       config: <provider-specific>
 
 agent:
-  targetURL: "http://localhost:8080"
   port: "8900"
   bindAddr: "0.0.0.0"
   token: ""
@@ -349,10 +368,13 @@ agent:
 
 | Variable | Default | Description |
 |---|---|---|
-| `LENS_TARGET_URL` | `http://localhost:8080` | Base URL of the app this sidecar is attached to |
+| `LENS_TARGET_PROVIDER` | `http` | Target provider: `http`, `unix`, or `grpc` |
+| `LENS_TARGET_URL` | `http://localhost:8080` | Base URL of the app (http provider) |
+| `LENS_TARGET_SOCKET_PATH` | _(empty)_ | Unix socket path (unix provider) |
+| `LENS_TARGET_GRPC_ADDR` | `localhost:8902` | gRPC address of the app (grpc provider) |
+| `LENS_TOKEN` | _(empty)_ | Shared secret sent as `x-lens-token`. Empty disables auth. |
 | `LENS_PORT` | `8900` | HTTP port the sidecar listens on |
 | `LENS_BIND_ADDR` | `0.0.0.0` | Address the HTTP server binds to |
-| `LENS_TOKEN` | _(empty)_ | Shared secret sent as `x-lens-token`. Empty disables auth. |
 | `LENS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
 | `LENS_ADVERTISE_ADDR` | _(auto)_ | IP peers use to reach this pod. Override when behind NAT. |
 | `LENS_COOLDOWN_MS` | `1000` | Minimum ms between invalidations for the same service |

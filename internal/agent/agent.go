@@ -4,10 +4,9 @@
 package agent
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -23,6 +22,7 @@ import (
 	"github.com/Vedanshu7/lens/internal/observability"
 	"github.com/Vedanshu7/lens/internal/persistence"
 	"github.com/Vedanshu7/lens/internal/store"
+	"github.com/Vedanshu7/lens/internal/target"
 	"github.com/Vedanshu7/lens/internal/transport"
 )
 
@@ -65,6 +65,11 @@ type Config struct {
 	// DiscoveryConfig is passed verbatim to the discovery factory.
 	DiscoveryConfig map[string]any
 
+	// Target names the active target provider (e.g. "http", "unix", "grpc").
+	Target string
+	// TargetConfig is passed verbatim to the target provider factory.
+	TargetConfig map[string]any
+
 	// ObserverEnabled controls whether the observability subsystem is active.
 	ObserverEnabled bool
 	// ObserverProviders lists the observability providers and their configs.
@@ -101,9 +106,15 @@ func LoadConfig() Config {
 		Transport:         envOr("LENS_TRANSPORT", ""),
 		Persistence:       envOr("LENS_PERSISTENCE", "redis"),
 		Discovery:         envOr("LENS_DISCOVERY", ""),
+		Target:            envOr("LENS_TARGET_PROVIDER", "http"),
 		TransportConfig:   map[string]any{"grpcPort": envOr("LENS_GRPC_PORT", "8901"), "natsUrl": envOr("LENS_NATS_URL", "nats://localhost:4222")},
 		PersistenceConfig: map[string]any{"addr": envOr("LENS_REDIS_ADDR", "localhost:6379"), "db": db},
 		DiscoveryConfig:   map[string]any{"bindPort": gossipPort},
+		TargetConfig: map[string]any{
+			"targetURL":  envOr("LENS_TARGET_URL", "http://localhost:8080"),
+			"socketPath": os.Getenv("LENS_TARGET_SOCKET_PATH"),
+			"grpcAddr":   envOr("LENS_TARGET_GRPC_ADDR", "localhost:8902"),
+		},
 	}
 
 	for _, path := range configPaths {
@@ -118,6 +129,9 @@ func LoadConfig() Config {
 			break
 		}
 	}
+
+	// Token is always env-only — inject after applyFile so YAML cannot override it.
+	cfg.TargetConfig["token"] = cfg.Token
 
 	return cfg
 }
@@ -170,6 +184,16 @@ func applyFile(cfg *Config, f config.File) {
 		cfg.DiscoveryConfig = f.Discovery.Config
 	}
 
+	if n := f.Target.ProviderName(); n != "" {
+		cfg.Target = n
+	}
+	if len(f.Target.Config) > 0 {
+		cfg.TargetConfig = f.Target.Config
+	} else if f.Agent.TargetURL != "" && (f.Target.ProviderName() == "" || f.Target.ProviderName() == "http") {
+		// Backward compat: agent.targetURL without a target block still configures the http provider.
+		cfg.TargetConfig["targetURL"] = f.Agent.TargetURL
+	}
+
 	cfg.ObserverEnabled = f.Observer.Enabled
 	if len(f.Observer.Providers) > 0 {
 		cfg.ObserverProviders = make([]ObserverProviderConfig, len(f.Observer.Providers))
@@ -179,27 +203,31 @@ func applyFile(cfg *Config, f config.File) {
 	}
 }
 
-// validateConfig checks that the configured provider names are compiled in.
-// Returns a clear error so the user knows exactly which build tag is missing.
+// validateConfig checks that the configured provider names are registered.
+// If a provider is missing, the binary was not built with it — run lens-build
+// with a lens.yaml that includes the provider to get a binary that has it.
 func validateConfig(cfg Config) error {
 	if cfg.Transport == "" {
 		return fmt.Errorf("transport provider not set: add 'transport.provider' to lens.yaml or set LENS_TRANSPORT")
 	}
 	if !transport.Has(cfg.Transport) {
-		return fmt.Errorf("transport %q is not compiled in; rebuild with -tags lens_%s", cfg.Transport, cfg.Transport)
+		return fmt.Errorf("transport provider %q is not registered; rebuild with lens-build after adding it to lens.yaml", cfg.Transport)
 	}
 	if !persistence.Has(cfg.Persistence) {
-		return fmt.Errorf("persistence %q is not compiled in", cfg.Persistence)
+		return fmt.Errorf("persistence provider %q is not registered; rebuild with lens-build after adding it to lens.yaml", cfg.Persistence)
 	}
 	if cfg.Discovery == "" {
 		return fmt.Errorf("discovery provider not set: add 'discovery.provider' to lens.yaml or set LENS_DISCOVERY")
 	}
 	if !discovery.Has(cfg.Discovery) {
-		return fmt.Errorf("discovery %q is not compiled in; rebuild with -tags lens_%s", cfg.Discovery, cfg.Discovery)
+		return fmt.Errorf("discovery provider %q is not registered; rebuild with lens-build after adding it to lens.yaml", cfg.Discovery)
+	}
+	if !target.Has(cfg.Target) {
+		return fmt.Errorf("target provider %q is not registered; rebuild with lens-build after adding it to lens.yaml", cfg.Target)
 	}
 	for _, p := range cfg.ObserverProviders {
 		if !observability.Has(p.Name) {
-			return fmt.Errorf("observer %q is not compiled in", p.Name)
+			return fmt.Errorf("observer provider %q is not registered; rebuild with lens-build after adding it to lens.yaml", p.Name)
 		}
 	}
 	return nil
@@ -240,20 +268,12 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// TargetInfo is the identity payload returned by /internal/lens/info on the target service.
-type TargetInfo struct {
-	Service  string `json:"service"`
-	Instance string `json:"instance"`
-}
-
 // Agent is the Lens cache-visibility sidecar. It is safe for concurrent use.
 type Agent struct {
 	// Config is the resolved runtime configuration.
 	Config Config
 	// Info holds the target service identity discovered on first connection.
-	Info TargetInfo
-	// HTTP is the client used for requests to the target service.
-	HTTP *http.Client
+	Info target.TargetInfo
 	// ProxyHTTP is the client used for proxied requests to peer sidecars.
 	ProxyHTTP *http.Client
 	// Metrics holds the Prometheus instrumentation for this agent.
@@ -263,9 +283,10 @@ type Agent struct {
 	// Obs is the multi-observer fan-out for structured telemetry events.
 	Obs *observability.MultiObserver
 
-	store     persistence.Backend
-	transport transport.Transport
-	disc      discovery.Resolver
+	targetClient target.TargetClient
+	store        persistence.Backend
+	transport    transport.Transport
+	disc         discovery.Resolver
 
 	peers       sync.Map
 	live        atomic.Bool
@@ -289,6 +310,12 @@ func New(cfg Config) *Agent {
 		os.Exit(1)
 	}
 
+	tc, err := target.New(cfg.Target, cfg.TargetConfig)
+	if err != nil {
+		slog.Error("failed to init target client", "provider", cfg.Target, "err", err)
+		os.Exit(1)
+	}
+
 	var observers []observability.Observer
 	if cfg.ObserverEnabled {
 		for _, pc := range cfg.ObserverProviders {
@@ -302,13 +329,13 @@ func New(cfg Config) *Agent {
 	}
 
 	return &Agent{
-		Config:    cfg,
-		store:     store,
-		Obs:       observability.NewMultiObserver(observers),
-		HTTP:      &http.Client{Timeout: 5 * time.Second},
-		ProxyHTTP: &http.Client{Timeout: 2 * time.Second},
-		Metrics:   newMetrics(),
-		Throttle:  newThrottle(cfg.CooldownMS),
+		Config:       cfg,
+		store:        store,
+		targetClient: tc,
+		Obs:          observability.NewMultiObserver(observers),
+		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
+		Metrics:      newMetrics(),
+		Throttle:     newThrottle(cfg.CooldownMS),
 	}
 }
 
@@ -334,6 +361,11 @@ func (a *Agent) Shutdown(ctx context.Context) {
 	}
 	if err := a.store.Close(); err != nil {
 		slog.Warn("store close", "err", err)
+	}
+	if a.targetClient != nil {
+		if err := a.targetClient.Close(); err != nil {
+			slog.Warn("target close", "err", err)
+		}
 	}
 }
 
@@ -385,18 +417,15 @@ func (a *Agent) WriteInvalidationLog(ctx context.Context, svc string, payload []
 }
 
 // GetFromTarget forwards a get request payload to this sidecar's own target service
-// and returns the response body.
+// and returns the response body. payload is JSON-encoded {"key":"..."}.
 func (a *Agent) GetFromTarget(ctx context.Context, payload []byte) ([]byte, error) {
-	resp, err := a.post(ctx,
-		a.Config.TargetURL+"/internal/lens/get",
-		"application/json",
-		bytes.NewReader(payload),
-	)
-	if err != nil {
-		return nil, err
+	var req struct {
+		Key string `json:"key"`
 	}
-	defer closeBody(resp)
-	return io.ReadAll(resp.Body)
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, fmt.Errorf("GetFromTarget: decode payload: %w", err)
+	}
+	return a.targetClient.Get(ctx, req.Key)
 }
 
 // allServices returns deduplicated service names from the live peer map plus
@@ -462,30 +491,3 @@ func (a *Agent) selfURL() string {
 	return "http://" + a.Config.AdvertiseAddr + ":" + a.Config.Port
 }
 
-func (a *Agent) post(ctx context.Context, url, contentType string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", url, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", contentType)
-	if a.Config.Token != "" {
-		req.Header.Set("x-lens-token", a.Config.Token)
-	}
-	return a.HTTP.Do(req)
-}
-
-func (a *Agent) get(ctx context.Context, url string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	if a.Config.Token != "" {
-		req.Header.Set("x-lens-token", a.Config.Token)
-	}
-	return a.HTTP.Do(req)
-}
-
-func closeBody(resp *http.Response) {
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck
-	_ = resp.Body.Close()
-}

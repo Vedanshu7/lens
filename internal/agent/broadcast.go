@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/Vedanshu7/lens/internal/store"
@@ -35,25 +34,10 @@ const maxRetries = 3
 func (a *Agent) applyInvalidation(ctx context.Context, m Message) {
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		resp, err := a.post(ctx,
-			a.Config.TargetURL+"/internal/lens/invalidate",
-			"application/json",
-			strings.NewReader(string(m.Payload)),
-		)
+		err := a.targetClient.Invalidate(ctx, m.Payload)
 		if err != nil {
 			lastErr = err
 			slog.Warn("invalidation attempt failed", "attempt", attempt, "max", maxRetries, "err", err)
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Duration(attempt) * time.Second):
-			}
-			continue
-		}
-		closeBody(resp)
-		if resp.StatusCode >= 500 {
-			lastErr = nil
-			slog.Warn("invalidation: target error", "attempt", attempt, "status", resp.StatusCode)
 			select {
 			case <-ctx.Done():
 				return
