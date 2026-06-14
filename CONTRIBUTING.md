@@ -44,20 +44,22 @@ cd lens
 ### 3. Create a branch — never work on `main`
 
 ```bash
-git checkout -b feat/consul-discovery
-git checkout -b fix/memberlist-rejoin
-git checkout -b docs/all-nats-stack
+git checkout -b feat/Lens_44_target_provider_layer
+git checkout -b fix/Lens_12_memberlist_rejoin
+git checkout -b docs/Lens_31_all_nats_stack
 ```
 
 **Branch naming:**
 
+Always include the project prefix and linked issue number:
+
 | Type | Pattern | Example |
 |---|---|---|
-| Feature | `feat/<description>` | `feat/consul-discovery` |
-| Bug fix | `fix/<description>` | `fix/nats-reconnect` |
-| Docs | `docs/<topic>` | `docs/kubernetes-deploy` |
-| Refactor | `refactor/<area>` | `refactor/discovery-interface` |
-| Test | `test/<area>` | `test/persistence-backend` |
+| Feature | `feat/Lens_<issue>_<description>` | `feat/Lens_44_target_provider_layer` |
+| Bug fix | `fix/Lens_<issue>_<description>` | `fix/Lens_12_nats_reconnect` |
+| Docs | `docs/Lens_<issue>_<topic>` | `docs/Lens_31_kubernetes_deploy` |
+| Refactor | `refactor/Lens_<issue>_<area>` | `refactor/Lens_18_discovery_interface` |
+| Test | `test/Lens_<issue>_<area>` | `test/Lens_27_persistence_backend` |
 
 ### 4. Run all checks locally
 
