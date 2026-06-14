@@ -1,0 +1,60 @@
+version: 2
+
+project_name: lens
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: lens-grpc-memberlist
+    binary: lens
+    main: .
+    flags:
+      - -tags=lens_grpc lens_memberlist
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+  - id: lens-nats
+    binary: lens-nats
+    main: .
+    flags:
+      - -tags=lens_nats lens_natsdiscovery lens_natskv
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: default
+    builds: [lens-grpc-memberlist, lens-nats]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+release:
+  github:
+    owner: Vedanshu7
+    name: lens
+  replace_existing_artifacts: true
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^chore(deps)"
+      - "^Merge"
