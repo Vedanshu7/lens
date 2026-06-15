@@ -38,7 +38,7 @@ func main() {
 	a := agent.New(cfg)
 
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
+		Addr:         cfg.BindAddr + ":" + cfg.Port,
 		Handler:      a.Routes(),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
