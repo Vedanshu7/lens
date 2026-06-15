@@ -62,6 +62,26 @@ func TestThrottle_Allow_PassesAfterCooldown(t *testing.T) {
 	}
 }
 
+func TestThrottle_SetServiceCooldown_OverridesDefault(t *testing.T) {
+	th := agent.NewThrottle(1000) // 1s default
+	th.SetServiceCooldown("fast-svc", 10)
+
+	th.Allow("fast-svc") //nolint:errcheck
+	time.Sleep(20 * time.Millisecond)
+
+	ok, _ := th.Allow("fast-svc")
+	if !ok {
+		t.Error("per-service cooldown should have expired after 20ms, but request was throttled")
+	}
+
+	// Default cooldown still applies to other services.
+	th.Allow("slow-svc") //nolint:errcheck
+	ok2, _ := th.Allow("slow-svc")
+	if ok2 {
+		t.Error("default 1s cooldown should block slow-svc immediately after first call")
+	}
+}
+
 func TestThrottle_Allow_IndependentKeys(t *testing.T) {
 	th := agent.NewThrottle(500)
 

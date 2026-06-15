@@ -45,6 +45,10 @@ type Config struct {
 	Token string
 	// CooldownMS is the minimum milliseconds between invalidations for the same service.
 	CooldownMS int
+	// Cooldowns overrides CooldownMS for specific services (service name → cooldown ms).
+	Cooldowns map[string]int
+	// BatchWindowMS is the debounce window for coalescing invalidations (ms). 0 disables batching.
+	BatchWindowMS int
 	// RateLimitRPS is the per-IP request rate limit (requests per second). 0 disables limiting.
 	RateLimitRPS int
 	// RateLimitBurst is the per-IP token-bucket burst size.
@@ -96,6 +100,7 @@ var configPaths = []string{"./lens.yaml", "/etc/lens/lens.yaml"}
 func LoadConfig() Config {
 	db, _ := strconv.Atoi(envOr("LENS_REDIS_DB", "0"))
 	cooldown, _ := strconv.Atoi(envOr("LENS_COOLDOWN_MS", "1000"))
+	batchWindow, _ := strconv.Atoi(envOr("LENS_BATCH_WINDOW_MS", "0"))
 	replayHours, _ := strconv.Atoi(envOr("LENS_REPLAY_WINDOW_HOURS", "24"))
 	gossipPort, _ := strconv.Atoi(envOr("LENS_GOSSIP_PORT", "7946"))
 	rateLimitRPS, _ := strconv.Atoi(envOr("LENS_RATE_LIMIT_RPS", "100"))
@@ -108,6 +113,7 @@ func LoadConfig() Config {
 		AdvertiseAddr:     envOr("LENS_ADVERTISE_ADDR", detectAdvertiseAddr()),
 		Token:             os.Getenv("LENS_TOKEN"),
 		CooldownMS:        cooldown,
+		BatchWindowMS:     batchWindow,
 		RateLimitRPS:      rateLimitRPS,
 		RateLimitBurst:    rateLimitBurst,
 		ReplayEnabled:     envOr("LENS_REPLAY_ENABLED", "true") != "false",
@@ -164,6 +170,9 @@ func applyFile(cfg *Config, f config.File) {
 	}
 	if f.Agent.CooldownMs != 0 {
 		cfg.CooldownMS = f.Agent.CooldownMs
+	}
+	if len(f.Agent.Cooldowns) > 0 {
+		cfg.Cooldowns = f.Agent.Cooldowns
 	}
 	if f.Agent.LogLevel != "" {
 		cfg.LogLevel = f.Agent.LogLevel
@@ -300,6 +309,8 @@ type Agent struct {
 	transport    transport.Transport
 	disc         discovery.Resolver
 
+	batch *batcher
+
 	peers       sync.Map
 	live        atomic.Bool
 	dialCancel  context.CancelFunc
@@ -340,7 +351,7 @@ func New(cfg Config) *Agent {
 		}
 	}
 
-	return &Agent{
+	a := &Agent{
 		Config:       cfg,
 		store:        store,
 		targetClient: tc,
@@ -350,6 +361,13 @@ func New(cfg Config) *Agent {
 		Throttle:     newThrottle(cfg.CooldownMS),
 		rateLim:      newIPRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst),
 	}
+	for svc, ms := range cfg.Cooldowns {
+		a.Throttle.SetServiceCooldown(svc, ms)
+	}
+	if cfg.BatchWindowMS > 0 {
+		a.batch = newBatcher(cfg.BatchWindowMS, a.executeBroadcast)
+	}
+	return a
 }
 
 // NewFromDeps constructs an Agent with pre-built dependencies injected directly.
@@ -369,6 +387,9 @@ func NewFromDeps(cfg Config, store persistence.Backend, tc target.TargetClient, 
 		Throttle:     newThrottle(cfg.CooldownMS),
 		rateLim:      newIPRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst),
 		reconnectCh:  make(chan struct{}, 1),
+	}
+	if cfg.BatchWindowMS > 0 {
+		a.batch = newBatcher(cfg.BatchWindowMS, a.executeBroadcast)
 	}
 	a.live.Store(true)
 	return a

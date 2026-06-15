@@ -51,22 +51,39 @@ func newMetricsWithReg(reg prometheus.Registerer) *Metrics {
 	}
 }
 
-// Throttle enforces a per-key cooldown to prevent invalidation storms.
+// Throttle enforces a per-service cooldown to prevent invalidation storms.
+// A per-service override takes precedence over the default cooldown.
 // Allow is safe for concurrent use.
 type Throttle struct {
-	mu       sync.Mutex
-	lastSeen map[string]time.Time
-	cooldown time.Duration
+	mu              sync.Mutex
+	lastSeen        map[string]time.Time
+	cooldown        time.Duration
+	serviceCooldown map[string]time.Duration
 }
 
 func newThrottle(cooldownMS int) *Throttle { return NewThrottle(cooldownMS) }
 
-// NewThrottle creates a Throttle with the given cooldown in milliseconds.
+// NewThrottle creates a Throttle with the given default cooldown in milliseconds.
 func NewThrottle(cooldownMS int) *Throttle {
 	return &Throttle{
-		lastSeen: make(map[string]time.Time),
-		cooldown: time.Duration(cooldownMS) * time.Millisecond,
+		lastSeen:        make(map[string]time.Time),
+		cooldown:        time.Duration(cooldownMS) * time.Millisecond,
+		serviceCooldown: make(map[string]time.Duration),
 	}
+}
+
+// SetServiceCooldown overrides the cooldown for a specific service.
+func (t *Throttle) SetServiceCooldown(service string, ms int) {
+	t.mu.Lock()
+	t.serviceCooldown[service] = time.Duration(ms) * time.Millisecond
+	t.mu.Unlock()
+}
+
+func (t *Throttle) cooldownFor(key string) time.Duration {
+	if d, ok := t.serviceCooldown[key]; ok {
+		return d
+	}
+	return t.cooldown
 }
 
 // Allow reports whether key is within its rate limit.
@@ -75,11 +92,12 @@ func NewThrottle(cooldownMS int) *Throttle {
 func (t *Throttle) Allow(key string) (bool, time.Duration) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	cd := t.cooldownFor(key)
 	now := time.Now()
 	allowed := true
 	wait := time.Duration(0)
 	if last, ok := t.lastSeen[key]; ok {
-		if remaining := t.cooldown - now.Sub(last); remaining > 0 {
+		if remaining := cd - now.Sub(last); remaining > 0 {
 			allowed = false
 			wait = remaining
 		}
