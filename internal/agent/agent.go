@@ -84,6 +84,18 @@ type Config struct {
 	ObserverEnabled bool
 	// ObserverProviders lists the observability providers and their configs.
 	ObserverProviders []ObserverProviderConfig
+
+	// Regions lists remote datacenter entry points for cross-region broadcast.
+	// When set, every invalidation is forwarded to each region's /api/invalidate
+	// unless the incoming request already carries X-Lens-Cross-Region: true.
+	Regions []RegionConfig
+}
+
+// RegionConfig names a remote region's agent HTTP entry point for cross-DC broadcast.
+type RegionConfig struct {
+	Name  string
+	URL   string
+	Token string
 }
 
 // ObserverProviderConfig names an observability provider and its configuration.
@@ -218,6 +230,13 @@ func applyFile(cfg *Config, f config.File) {
 		cfg.ObserverProviders = make([]ObserverProviderConfig, len(f.Observer.Providers))
 		for i, p := range f.Observer.Providers {
 			cfg.ObserverProviders[i] = ObserverProviderConfig{Name: p.ProviderName(), Config: p.Config}
+		}
+	}
+
+	if len(f.Agent.Regions) > 0 {
+		cfg.Regions = make([]RegionConfig, len(f.Agent.Regions))
+		for i, r := range f.Agent.Regions {
+			cfg.Regions[i] = RegionConfig{Name: r.Name, URL: r.URL, Token: r.Token}
 		}
 	}
 }
