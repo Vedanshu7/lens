@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -103,6 +104,20 @@ func (a *Agent) requireReady(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// limitRequests rejects requests from IPs that exceed the configured rate limit.
+func (a *Agent) limitRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if !a.rateLim.allow(ip) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]string{"error": "rate limited"}) //nolint:errcheck
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // secureHeaders sets defensive HTTP response headers on every response.
 func secureHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +153,7 @@ func (a *Agent) Routes() http.Handler {
 
 	a.registerObsRoutes(mux)
 
-	return secureHeaders(mux)
+	return secureHeaders(a.limitRequests(mux))
 }
 
 // DeclareRequest is sent by the target service to register a cache key schema.
