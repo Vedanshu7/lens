@@ -89,3 +89,17 @@ func (t *Throttle) Allow(key string) (bool, time.Duration) {
 	}
 	return allowed, wait
 }
+
+// Evict removes entries that have not been seen for longer than the cooldown period.
+// It should be called periodically to prevent the map from growing unbounded when
+// many distinct service names are used.
+func (t *Throttle) Evict() {
+	cutoff := time.Now().Add(-t.cooldown)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for k, v := range t.lastSeen {
+		if v.Before(cutoff) {
+			delete(t.lastSeen, k)
+		}
+	}
+}

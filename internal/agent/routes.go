@@ -108,7 +108,9 @@ func (a *Agent) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", a.trackRequest("health", a.handleHealth))
-	mux.HandleFunc("POST /api/declare", a.trackRequest("declare", a.handleDeclare))
+	// /api/declare is authenticated but not gated by requireReady — it is intentionally
+	// callable during startup before the agent has fully connected to its target.
+	mux.HandleFunc("POST /api/declare", a.trackRequest("declare", a.authenticate(a.handleDeclare)))
 	mux.Handle("GET /metrics", promhttp.Handler())
 
 	gate := func(pattern string, h http.HandlerFunc) {
@@ -577,11 +579,15 @@ func (a *Agent) selfProviders() map[string]any {
 
 func (a *Agent) handleHealth(w http.ResponseWriter, r *http.Request) {
 	storeOK := a.store.Ping(r.Context()) == nil
+	targetOK := a.ready()
 	_, hasObs := a.Obs.SQLObserver()
 	w.Header().Set("Content-Type", "application/json")
+	if !storeOK || !targetOK {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
 	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 		"redis":         storeOK,
-		"target":        a.ready(),
+		"target":        targetOK,
 		"observability": hasObs,
 		"providers":     a.selfProviders(),
 	})

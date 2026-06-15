@@ -17,6 +17,7 @@ import (
 // After a successful dial it blocks until the reconnect channel fires, then
 // waits 5 seconds before attempting to reconnect.
 func (a *Agent) Connect(ctx context.Context) {
+	go a.evictThrottle(ctx)
 	for {
 		if err := a.dial(ctx); err != nil {
 			slog.Warn("waiting for target", "err", err, "retryIn", "10s")
@@ -49,11 +50,18 @@ func (a *Agent) Connect(ctx context.Context) {
 // calls after a reconnect reuse the existing providers because gRPC and gossip
 // connections are independent of the target HTTP connection.
 func (a *Agent) dial(ctx context.Context) error {
-	if err := a.store.Ping(ctx); err != nil {
+	// Cancel any context from a previous dial session, then create a fresh one.
+	// dialCtx is cancelled by cancelDial() when the connection is lost or on shutdown,
+	// aborting any in-progress operations (ping, info fetch, replay).
+	a.cancelDial()
+	dialCtx, cancel := context.WithCancel(ctx)
+	a.dialCancel = cancel
+
+	if err := a.store.Ping(dialCtx); err != nil {
 		return fmt.Errorf("persistence: %w", err)
 	}
 
-	info, err := a.fetchTargetInfo(ctx)
+	info, err := a.fetchTargetInfo(dialCtx)
 	if err != nil {
 		return fmt.Errorf("target info: %w", err)
 	}
@@ -63,9 +71,9 @@ func (a *Agent) dial(ctx context.Context) error {
 	// Publish provider stack and service name to Redis so any peer (even on a
 	// different transport/gossip cluster) can discover this service and its stack.
 	if provJSON, err := json.Marshal(a.selfProviders()); err == nil {
-		a.store.Set(ctx, store.ProvidersKey(info.Service), string(provJSON), 24*time.Hour) //nolint:errcheck
+		a.store.Set(dialCtx, store.ProvidersKey(info.Service), string(provJSON), 24*time.Hour) //nolint:errcheck
 	}
-	a.store.SAdd(ctx, store.ServicesSetKey(), info.Service) //nolint:errcheck
+	a.store.SAdd(dialCtx, store.ServicesSetKey(), info.Service) //nolint:errcheck
 
 	if a.transport == nil {
 		t, err := itransport.New(a, a.Config.Transport, a.Config.TransportConfig)
@@ -92,11 +100,11 @@ func (a *Agent) dial(ctx context.Context) error {
 			GRPCAddr: a.Config.AdvertiseAddr + ":" + grpcPort,
 			AgentURL: a.selfURL(),
 		}
-		if err := disc.Register(ctx, self); err != nil {
+		if err := disc.Register(dialCtx, self); err != nil {
 			return fmt.Errorf("discovery register: %w", err)
 		}
 
-		eventCh, err := disc.Watch(ctx)
+		eventCh, err := disc.Watch(dialCtx)
 		if err != nil {
 			return fmt.Errorf("discovery watch: %w", err)
 		}
@@ -104,13 +112,11 @@ func (a *Agent) dial(ctx context.Context) error {
 	}
 
 	if a.Config.ReplayEnabled {
-		if err := a.replayMissed(ctx); err != nil {
+		if err := a.replayMissed(dialCtx); err != nil {
 			slog.Warn("replay failed", "err", err)
 		}
 	}
 
-	_, cancel := context.WithCancel(ctx)
-	a.dialCancel = cancel
 	a.reconnectCh = make(chan struct{}, 1)
 	a.live.Store(true)
 	return nil
@@ -119,6 +125,20 @@ func (a *Agent) dial(ctx context.Context) error {
 // Dial verifies persistence, resolves target identity, and marks the agent live.
 // Exported so integration tests can drive the connection lifecycle directly.
 func (a *Agent) Dial(ctx context.Context) error { return a.dial(ctx) }
+
+// evictThrottle runs until ctx is cancelled, evicting stale Throttle entries every minute.
+func (a *Agent) evictThrottle(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.Throttle.Evict()
+		}
+	}
+}
 
 // fetchTargetInfo calls the target client's Info method and returns the decoded identity.
 func (a *Agent) fetchTargetInfo(ctx context.Context) (target.TargetInfo, error) {
