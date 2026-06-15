@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -444,6 +445,12 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "service: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	if req.Pattern != nil {
+		if _, err := path.Match(*req.Pattern, ""); err != nil {
+			http.Error(w, "pattern: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	if ok, wait := a.Throttle.Allow(req.Service); !ok {
 		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", wait.Seconds()))
@@ -453,6 +460,12 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 			"error":      "rate limited",
 			"retryAfter": wait.Milliseconds(),
 		})
+		return
+	}
+
+	if a.batch != nil {
+		a.batch.add(req.Service, req.Pattern)
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 
