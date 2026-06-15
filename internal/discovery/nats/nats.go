@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+
 	"github.com/Vedanshu7/lens/internal/discovery"
 	"github.com/Vedanshu7/lens/internal/persistence"
 )
@@ -37,9 +38,9 @@ func init() {
 			return nil, err
 		}
 		return &natsResolver{
-			nc:       nc,
-			peers:    map[string]peerEntry{},
-			eventCh:  make(chan discovery.Event, 64),
+			nc:      nc,
+			peers:   map[string]peerEntry{},
+			eventCh: make(chan discovery.Event, 64),
 		}, nil
 	})
 }

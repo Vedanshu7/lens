@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -117,7 +118,7 @@ func main() {
 		log.Fatalf("lens-build: resolve output path: %v", err)
 	}
 
-	cmd := exec.Command("go", "build", "-o", absOutput, projectRoot)
+	cmd := exec.CommandContext(context.Background(), "go", "build", "-o", absOutput, projectRoot)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/Vedanshu7/lens/internal/discovery"
 	"github.com/Vedanshu7/lens/internal/observability"
 	"github.com/Vedanshu7/lens/internal/store"
@@ -164,18 +165,14 @@ func (a *Agent) handleDeclare(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (a *Agent) handleServices(w http.ResponseWriter, r *http.Request) {
-	services, err := a.listServices(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+func (a *Agent) handleServices(w http.ResponseWriter, _ *http.Request) {
+	services := a.listServices()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"services": services}) //nolint:errcheck
 }
 
-func (a *Agent) listServices(_ context.Context) ([]string, error) {
-	return a.allServices(), nil
+func (a *Agent) listServices() []string {
+	return a.allServices()
 }
 
 // InstanceInfo describes a live instance of a service as returned by /api/nodes.
@@ -191,17 +188,13 @@ func (a *Agent) handleNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodes, err := a.listNodes(r.Context(), svc)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	nodes := a.listNodes(svc)
 	a.Metrics.instancesActive.WithLabelValues(svc).Set(float64(len(nodes)))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"instances": nodes}) //nolint:errcheck
 }
 
-func (a *Agent) listNodes(_ context.Context, svc string) ([]InstanceInfo, error) {
+func (a *Agent) listNodes(svc string) []InstanceInfo {
 	nodes := make([]InstanceInfo, 0)
 	if a.Info.Service == svc {
 		nodes = append(nodes, InstanceInfo{Instance: a.Info.Instance, AgentURL: a.selfURL()})
@@ -213,7 +206,7 @@ func (a *Agent) listNodes(_ context.Context, svc string) ([]InstanceInfo, error)
 		}
 		return true
 	})
-	return nodes, nil
+	return nodes
 }
 
 func (a *Agent) handleKeys(w http.ResponseWriter, r *http.Request) {
@@ -234,12 +227,7 @@ func (a *Agent) handleKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodes, err := a.listNodes(ctx, svc)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
+	nodes := a.listNodes(svc)
 	keys := make([]string, len(nodes))
 	for i, n := range nodes {
 		keys[i] = store.CacheKey(svc, n.Instance)
@@ -444,7 +432,7 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	payload, _ := json.Marshal(map[string]any{"pattern": req.Pattern})
 
-	nodes, _ := a.listNodes(ctx, req.Service)
+	nodes := a.listNodes(req.Service)
 	total := len(nodes)
 	a.Metrics.instancesActive.WithLabelValues(req.Service).Set(float64(total))
 

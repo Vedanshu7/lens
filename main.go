@@ -15,14 +15,14 @@ import (
 	"github.com/Vedanshu7/lens/internal/agent"
 
 	// Always-on providers — included in every binary regardless of config.
-	_ "github.com/Vedanshu7/lens/internal/target/http"
-	_ "github.com/Vedanshu7/lens/internal/persistence/redis"
-	_ "github.com/Vedanshu7/lens/internal/persistence/memory"
 	_ "github.com/Vedanshu7/lens/internal/observability/noop"
 	_ "github.com/Vedanshu7/lens/internal/observability/prometheus"
 	_ "github.com/Vedanshu7/lens/internal/observability/sql"
 	_ "github.com/Vedanshu7/lens/internal/observability/stdout"
 	_ "github.com/Vedanshu7/lens/internal/observability/webhook"
+	_ "github.com/Vedanshu7/lens/internal/persistence/memory"
+	_ "github.com/Vedanshu7/lens/internal/persistence/redis"
+	_ "github.com/Vedanshu7/lens/internal/target/http"
 )
 
 func main() {

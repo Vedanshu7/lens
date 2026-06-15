@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-zeromq/zmq4"
+
 	"github.com/Vedanshu7/lens/internal/transport"
 )
 

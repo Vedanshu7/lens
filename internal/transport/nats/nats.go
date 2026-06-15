@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+
 	"github.com/Vedanshu7/lens/internal/transport"
 )
 

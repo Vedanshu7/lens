@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Vedanshu7/lens/internal/observability"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -17,6 +16,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/Vedanshu7/lens/internal/observability"
 )
 
 func init() {

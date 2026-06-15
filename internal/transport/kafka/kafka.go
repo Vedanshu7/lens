@@ -14,6 +14,7 @@ import (
 	"time"
 
 	kafka "github.com/segmentio/kafka-go"
+
 	"github.com/Vedanshu7/lens/internal/transport"
 )
 
@@ -23,7 +24,7 @@ func init() {
 		if brokers == "" {
 			brokers = "localhost:9092"
 		}
-		return newKafkaTransport(host, strings.Split(brokers, ","))
+		return newKafkaTransport(host, strings.Split(brokers, ",")), nil
 	})
 }
 
@@ -41,13 +42,13 @@ type kafkaTransport struct {
 	brokers []string
 	writer  *kafka.Writer
 
-	mu          sync.Mutex
+	mu           sync.Mutex
 	replyWaiters map[string]chan []byte
 
 	cancel context.CancelFunc
 }
 
-func newKafkaTransport(host transport.TransportHost, brokers []string) (*kafkaTransport, error) {
+func newKafkaTransport(host transport.TransportHost, brokers []string) *kafkaTransport {
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP(brokers...),
 		Balancer:     &kafka.LeastBytes{},
@@ -77,7 +78,7 @@ func newKafkaTransport(host transport.TransportHost, brokers []string) (*kafkaTr
 		"get", getTopic(inst),
 		"reply", getReplyTopic(inst),
 	)
-	return t, nil
+	return t
 }
 
 // Broadcast publishes payload to the service broadcast topic. All replicas
@@ -268,9 +269,9 @@ func (t *kafkaTransport) consumeGetReply(ctx context.Context, inst string) {
 	}
 }
 
-func broadcastTopic(svc string) string  { return "lens." + svc + ".broadcast" }
-func getTopic(inst string) string       { return "lens.get." + inst }
-func getReplyTopic(inst string) string  { return "lens.get.resp." + inst }
+func broadcastTopic(svc string) string { return "lens." + svc + ".broadcast" }
+func getTopic(inst string) string      { return "lens.get." + inst }
+func getReplyTopic(inst string) string { return "lens.get.resp." + inst }
 
 // Compile-time check that kafkaTransport satisfies transport.Transport.
 var _ transport.Transport = (*kafkaTransport)(nil)

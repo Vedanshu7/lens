@@ -8,6 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/Vedanshu7/lens/internal/observability"
 )
 
@@ -65,6 +66,8 @@ func (p *promObserver) Record(_ context.Context, e observability.Event) error {
 		p.peerEvents.WithLabelValues(e.Service, "leave").Inc()
 	case observability.EventDeadPod:
 		p.deadPods.Inc()
+	default:
+		// EventReplay, EventDiscovery, EventHTTPRequest — not tracked by this provider.
 	}
 	return nil
 }

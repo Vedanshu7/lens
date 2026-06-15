@@ -136,7 +136,7 @@ func (r *dnsSRVResolver) poll(ctx context.Context, service string) {
 
 // resolve performs one DNS SRV lookup and reconciles the result against r.known.
 func (r *dnsSRVResolver) resolve(service string) {
-	_, addrs, err := net.LookupSRV("lens", "tcp", service+"."+r.domain)
+	_, addrs, err := net.DefaultResolver.LookupSRV(context.Background(), "lens", "tcp", service+"."+r.domain)
 	if err != nil {
 		slog.Warn("dnssrv: lookup failed", "service", service, "domain", r.domain, "err", err)
 		return

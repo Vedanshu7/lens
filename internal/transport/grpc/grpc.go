@@ -39,7 +39,7 @@ type grpcTransport struct {
 func newGRPCTransport(host transport.TransportHost, grpcPort string) (*grpcTransport, error) {
 	t := &grpcTransport{host: host}
 
-	lis, err := net.Listen("tcp", ":"+grpcPort)
+	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", ":"+grpcPort)
 	if err != nil {
 		return nil, fmt.Errorf("grpc listen: %w", err)
 	}

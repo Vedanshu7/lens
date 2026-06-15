@@ -110,7 +110,7 @@ func (s *stubTransport) Broadcast(_ context.Context, _ string, _ []byte) ([]tran
 	return nil, nil
 }
 func (s *stubTransport) Get(_ context.Context, _, _, _ string) ([]byte, error) { return nil, nil }
-func (s *stubTransport) Close() error                                           { return nil }
+func (s *stubTransport) Close() error                                          { return nil }
 
 // --- discovery ---
 
@@ -162,4 +162,4 @@ func TestObservabilityRegistry_RegisterAndHas(t *testing.T) {
 type stubObserver struct{}
 
 func (o *stubObserver) Record(_ context.Context, _ observability.Event) error { return nil }
-func (o *stubObserver) Close() error                                           { return nil }
+func (o *stubObserver) Close() error                                          { return nil }

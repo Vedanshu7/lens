@@ -95,11 +95,11 @@ func TestPeersForService_ExcludesSelf(t *testing.T) {
 	go a.WatchPeers(ch)
 
 	ch <- discovery.Event{
-		Type: discovery.EventJoin,
+		Type:     discovery.EventJoin,
 		Instance: discovery.ServiceInstance{Service: "test-svc", Instance: "test-inst"},
 	}
 	ch <- discovery.Event{
-		Type: discovery.EventJoin,
+		Type:     discovery.EventJoin,
 		Instance: discovery.ServiceInstance{Service: "test-svc", Instance: "peer-2"},
 	}
 	time.Sleep(30 * time.Millisecond)

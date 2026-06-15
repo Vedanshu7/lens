@@ -42,7 +42,7 @@ func init() {
 		if err != nil {
 			return nil, fmt.Errorf("sql observer: open: %w", err)
 		}
-		if err := db.Ping(); err != nil {
+		if err := db.PingContext(context.Background()); err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("sql observer: ping: %w", err)
 		}

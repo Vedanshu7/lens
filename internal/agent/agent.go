@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/Vedanshu7/lens/config"
 	"github.com/Vedanshu7/lens/internal/discovery"
 	"github.com/Vedanshu7/lens/internal/observability"
@@ -237,7 +238,7 @@ func validateConfig(cfg Config) error {
 // detectAdvertiseAddr returns this node's primary outbound IP by opening a UDP
 // socket without sending any traffic. Falls back to "127.0.0.1" on error.
 func detectAdvertiseAddr() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
+	conn, err := (&net.Dialer{}).DialContext(context.Background(), "udp", "8.8.8.8:80")
 	if err != nil {
 		return "127.0.0.1"
 	}
@@ -524,4 +525,3 @@ func (a *Agent) cacheKey() string {
 func (a *Agent) selfURL() string {
 	return "http://" + a.Config.AdvertiseAddr + ":" + a.Config.Port
 }
-

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/memberlist"
+
 	"github.com/Vedanshu7/lens/internal/discovery"
 	"github.com/Vedanshu7/lens/internal/persistence"
 	"github.com/Vedanshu7/lens/internal/store"

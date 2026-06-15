@@ -78,7 +78,7 @@ func TestMemoryBackend_LTrim(t *testing.T) {
 	b := newMemBackend(t)
 
 	b.LPush(ctx, "list", "a", "b", "c", "d", "e") //nolint:errcheck
-	b.LTrim(ctx, "list", 0, 1)                     //nolint:errcheck
+	b.LTrim(ctx, "list", 0, 1)                    //nolint:errcheck
 
 	got, _ := b.LRange(ctx, "list", 0, -1)
 	if len(got) != 2 {

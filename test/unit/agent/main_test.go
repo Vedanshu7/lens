@@ -21,4 +21,4 @@ func (n *noopTransport) Broadcast(_ context.Context, _ string, _ []byte) ([]tran
 	return nil, nil
 }
 func (n *noopTransport) Get(_ context.Context, _, _, _ string) ([]byte, error) { return nil, nil }
-func (n *noopTransport) Close() error                                           { return nil }
+func (n *noopTransport) Close() error                                          { return nil }
