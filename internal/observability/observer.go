@@ -125,6 +125,8 @@ type MultiObserver struct {
 	sqlObs    SQLQuerier
 	ch        chan Event
 	done      chan struct{}
+	mu        sync.RWMutex
+	closed    bool
 }
 
 // SQLQuerier is implemented by the SQL observer to expose query access
@@ -225,8 +227,8 @@ func (m *MultiObserver) drain() {
 }
 
 // Record enqueues event e for delivery. Returns immediately when no observers
-// are configured. Drops the event when the buffer is full so the invalidation
-// hot path is never blocked.
+// are configured or the MultiObserver is already closed. Drops the event when
+// the buffer is full so the invalidation hot path is never blocked.
 func (m *MultiObserver) Record(_ context.Context, e Event) error {
 	if len(m.observers) == 0 {
 		return nil
@@ -234,16 +236,25 @@ func (m *MultiObserver) Record(_ context.Context, e Event) error {
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now().UTC()
 	}
-	select {
-	case m.ch <- e:
-	default:
+	m.mu.RLock()
+	if !m.closed {
+		select {
+		case m.ch <- e:
+		default:
+		}
 	}
+	m.mu.RUnlock()
 	return nil
 }
 
 // Close drains the event channel and shuts down all observers.
 func (m *MultiObserver) Close() error {
-	close(m.ch)
+	m.mu.Lock()
+	if !m.closed {
+		m.closed = true
+		close(m.ch)
+	}
+	m.mu.Unlock()
 	<-m.done
 	for _, o := range m.observers {
 		o.Close() //nolint:errcheck

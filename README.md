@@ -1,14 +1,83 @@
 # Lens
 
-A Go sidecar framework with five independently swappable layers: **transport**, **discovery**, **persistence**, **observability**, and **target**.
+Distributed caches go stale. When one replica writes a change, every other pod keeps serving the old value until TTL expires. The usual fix — a cache client that calls a central invalidation bus — adds a new SDK dependency, couples your service to your cache infrastructure, and still misses pods that were offline during the event.
 
-Pick any provider for each layer. Combine them freely. Switch at config time with no code changes.
+Lens is a zero-SDK cache-invalidation sidecar. Deploy one beside each replica. They find each other, broadcast invalidation events cluster-wide, and replay any events missed while a pod was down — all with no changes to your application code and no coupling to your cache library.
+
+```
+One sidecar per replica.  Pick any transport, discovery, and observability provider.
+Switch at config time.    No code changes.  No rebuild.
+```
+
+---
+
+## How it works
+
+```mermaid
+graph LR
+    subgraph Pod A
+        AppA[App A]
+        SA[Sidecar A\n:8900]
+        AppA <-->|localhost| SA
+    end
+
+    subgraph Pod B
+        AppB[App B]
+        SB[Sidecar B\n:8900]
+        AppB <-->|localhost| SB
+    end
+
+    subgraph Pod C
+        AppC[App C]
+        SC[Sidecar C\n:8900]
+        AppC <-->|localhost| SC
+    end
+
+    Store[(Persistence layer)]
+
+    SA <-->|transport layer| SB
+    SA <-->|transport layer| SC
+    SB <-->|transport layer| SC
+
+    SA <-->|replay log\naudit log| Store
+    SB <--> Store
+    SC <--> Store
+
+    Dashboard[Dashboard / API client] -->|HTTP| SA
+```
+
+**Lifecycle:**
+
+1. Sidecar starts → calls `GET /internal/lens/info` on the co-located app to learn its service/instance identity
+2. Announces itself through the configured discovery layer
+3. Client or app calls `POST /api/invalidate` → throttled and optionally batched → broadcast to all peers via the transport layer
+4. Each peer receives the event, calls `POST /internal/lens/invalidate` on its co-located app, and logs the event to persistence
+5. On restart → replays any invalidations that arrived while the pod was offline
+
+Any client or dashboard only needs to reach **one** sidecar — it routes to the rest.
+
+---
+
+## Quick start
+
+```bash
+cd example
+docker compose -f docker-compose.nats-standalone.yml up --build -d
+```
+
+Three app replicas + three sidecars + NATS + PostgreSQL. Open `http://localhost:8921` for the live dashboard, then trigger a cluster-wide invalidation:
+
+```bash
+curl -X POST http://localhost:8900/api/invalidate \
+  -H "Content-Type: application/json" \
+  -d '{"service":"demo","pattern":"user:"}'
+```
 
 ---
 
 ## Providers
 
-### Transport — how pods broadcast to each other
+### Transport — how sidecars broadcast to each other
 
 | Provider | Best for |
 |---|---|
@@ -18,14 +87,16 @@ Pick any provider for each layer. Combine them freely. Switch at config time wit
 | `zeromq` | Brokerless pub/sub, minimal footprint |
 | `redis-streams` | Reuses an existing Redis instance, zero extra infra |
 
-### Discovery — how pods find each other
+### Discovery — how sidecars find each other
 
 | Provider | Best for |
 |---|---|
-| `memberlist` | Gossip over UDP, zero infrastructure |
+| `memberlist` | SWIM gossip over UDP, zero infrastructure |
 | `nats` | Uses the same broker already running for transport |
 | `dnssrv` | Kubernetes headless services, Consul DNS |
 | `static` | Fixed known peer list, no infrastructure |
+| `zookeeper` | ZooKeeper ensemble, ephemeral znodes — existing ZK infra |
+| `mdns` | mDNS/Zeroconf `_lens._tcp`, zero config, local network only |
 
 ### Persistence — replay log, audit trail, shared metadata
 
@@ -42,6 +113,8 @@ Pick any provider for each layer. Combine them freely. Switch at config time wit
 | `sql` | Structured events to SQLite, PostgreSQL, or MySQL. Powers the dashboard. Always compiled in. |
 | `prometheus` | Scrape endpoint at `/metrics`. Always compiled in. |
 | `otel` | OTLP traces and metrics to any OpenTelemetry collector |
+| `influxdb` | InfluxDB v2 line protocol — time-series metrics over HTTP |
+| `opensearch` | OpenSearch / Elasticsearch bulk API — full-text search over events |
 | `webhook` | HTTP POST on every event to a configurable URL. Always compiled in. |
 | `stdout` | JSON lines to stdout, feeds any log aggregation pipeline. Always compiled in. |
 | `noop` | Discard all events (default when no provider is configured). Always compiled in. |
@@ -72,7 +145,7 @@ graph TD
     Transport --> nats_t[nats\nbroker fan-out]
     Transport --> kafka[kafka\nhigh-throughput]
     Transport --> zeromq[zeromq\nbrokerless]
-    Transport --> redisstreams[redis-streams\nreuse existing instance]
+    Transport --> redisstreams[redis-streams\nreuse existing Redis]
 
     Persistence --> redis_p[redis\ndurable default]
     Persistence --> natskv[natskv\nJetStream KV]
@@ -82,10 +155,14 @@ graph TD
     Discovery --> nats_d[nats\nsame broker as transport]
     Discovery --> dnssrv[dnssrv\nDNS SRV / K8s headless]
     Discovery --> static_d[static\nfixed seed list]
+    Discovery --> zookeeper[zookeeper\nephemeral znodes]
+    Discovery --> mdns[mdns\nmDNS Zeroconf]
 
     Observability --> sql[sql\nSQLite / PostgreSQL / MySQL]
     Observability --> prometheus[prometheus\n/metrics]
     Observability --> otel[otel\nOTLP traces + metrics]
+    Observability --> influxdb[influxdb\nline protocol v2]
+    Observability --> opensearch[opensearch\nbulk API]
     Observability --> webhook[webhook\nHTTP POST events]
     Observability --> stdout[stdout\nJSON log lines]
     Observability --> noop[noop\ndiscard]
@@ -152,77 +229,70 @@ discovery:   { provider: nats,   config: { natsUrl: "nats://broker:4222" } }
 lens-build
 ```
 
----
+### ZooKeeper + OpenSearch (existing ZK and Elastic infra)
 
-## Quick start
+```yaml
+discovery:
+  provider: zookeeper
+  config: { servers: "zk1:2181,zk2:2181,zk3:2181" }
 
-```bash
-cd example
-docker compose -f docker-compose.nats-standalone.yml up --build -d
+observer:
+  enabled: true
+  providers:
+    - name: opensearch
+      config:
+        url: "https://opensearch:9200"
+        index: lens-events
+        username: admin
+        password: ${OPENSEARCH_PASSWORD}
 ```
 
-Three app pods + three sidecars + NATS + PostgreSQL. Open `http://localhost:8921` for the dashboard.
+```bash
+lens-build
+```
 
----
+### mDNS + InfluxDB (zero-config local dev with time-series metrics)
 
-## Architecture
+```yaml
+discovery:
+  provider: mdns
 
-Each pod runs one sidecar. Sidecars discover each other through the configured discovery layer and communicate through the configured transport. Any client or dashboard only needs to reach one sidecar — it routes to the rest.
+observer:
+  enabled: true
+  providers:
+    - name: influxdb
+      config:
+        url: "http://influxdb:8086"
+        token: ${INFLUX_TOKEN}
+        org: myorg
+        bucket: lens
+```
 
-```mermaid
-graph LR
-    subgraph Pod A
-        AppA[App A]
-        SA[Sidecar A\n:8900]
-        AppA <-->|localhost| SA
-    end
-
-    subgraph Pod B
-        AppB[App B]
-        SB[Sidecar B\n:8900]
-        AppB <-->|localhost| SB
-    end
-
-    subgraph Pod C
-        AppC[App C]
-        SC[Sidecar C\n:8900]
-        AppC <-->|localhost| SC
-    end
-
-    Store[(Persistence layer)]
-
-    SA <-->|transport layer| SB
-    SA <-->|transport layer| SC
-    SB <-->|transport layer| SC
-
-    SA <-->|replay log\naudit log| Store
-    SB <--> Store
-    SC <--> Store
-
-    Dashboard[Dashboard / API client] -->|HTTP| SA
+```bash
+lens-build
 ```
 
 ---
 
 ## Integrating your app
 
-The sidecar calls your app through the configured **target provider** (`http` by default, or `unix`/`grpc` for lower overhead). Expose these endpoints on the app — the contract is the same regardless of which provider is used.
+The sidecar calls your app through the configured **target provider** (`http` by default, or `unix`/`grpc` for lower overhead). Expose these endpoints — the contract is the same regardless of which target provider is used.
 
 ### Identity endpoint
 
 ```
 GET /internal/lens/info
--> { "service": "my-service", "instance": "pod-xyz" }
+→ { "service": "my-service", "instance": "pod-xyz" }
 ```
 
-Called once on startup. `service` is shared by all replicas; `instance` is unique per pod (use hostname or pod name).
+Called once on startup. `service` is shared by all replicas; `instance` is unique per pod (use the hostname or pod name).
 
 ### Invalidate endpoint
 
 ```
 POST /internal/lens/invalidate
-<- { "pattern": "some-prefix" }
--> 200 OK
+← { "pattern": "some-prefix" }
+→ 200 OK
 ```
 
 Remove cached entries whose key contains `pattern`. Pass `null` to clear everything.
@@ -231,8 +301,8 @@ Remove cached entries whose key contains `pattern`. Pass `null` to clear everyth
 
 ```
 POST /internal/lens/get
-<- { "key": "my-key:123" }
--> { "found": true, "value": "..." }
+← { "key": "my-key:123" }
+→ { "found": true, "value": "..." }
 ```
 
 Return the current value of a key from this pod's cache. Return `"found": false` when absent.
@@ -241,10 +311,76 @@ Return the current value of a key from this pod's cache. Return `"found": false`
 
 ```
 POST http://localhost:8900/api/declare
-<- { "keyName": "my-key:123", "keySchema": null, "ttlInSeconds": 3600 }
+← { "keyName": "my-key:123", "keySchema": null, "ttlInSeconds": 3600 }
 ```
 
-Call this whenever your app writes to its cache. Keys appear in the dashboard without this call but the schema metadata won't be stored.
+Call this whenever your app writes to its cache. Keys appear in the dashboard without it, but schema metadata won't be stored.
+
+---
+
+## Dashboard
+
+Each sidecar serves its own dashboard. Opening any sidecar port gives a live view of the cluster — services, nodes, cache keys, audit log, and observability charts. Provider stack badges show the active transport, persistence, discovery, and observer combination per service.
+
+The dashboard subscribes to `GET /api/events/stream` (Server-Sent Events) for real-time invalidation updates — no polling.
+
+**Dev mode:**
+
+```bash
+cd dashboard
+cp .env.example .env      # set VITE_SIDECAR_PORT to your sidecar's port
+npm install && npm run dev
+```
+
+Two clusters side by side:
+
+```bash
+VITE_PORT=5173 VITE_SIDECAR_PORT=8901 npm run dev   # cluster A
+VITE_PORT=5174 VITE_SIDECAR_PORT=8921 npm run dev   # cluster B
+```
+
+Pre-built image: `ghcr.io/vedanshu7/lens-dashboard:main`
+
+---
+
+## Hot reload
+
+Lens watches the active `lens.yaml` for changes (200 ms debounce) and applies `logLevel` and `cooldownMs` immediately without restart. Non-reloadable fields (transport, discovery, and persistence providers) log a warning and take effect only after the next restart.
+
+---
+
+## Multi-region / cross-datacenter
+
+Add a `regions` block to broadcast each invalidation to remote clusters in parallel:
+
+```yaml
+agent:
+  regions:
+    - name: us-west
+      url: "https://lens-us-west.internal"
+      token: ${LENS_REGION_TOKEN}
+    - name: eu-central
+      url: "https://lens-eu.internal"
+      token: ${LENS_REGION_TOKEN_EU}
+```
+
+Lens forwards to each region concurrently with a 5 s timeout (fire-and-forget). An `X-Lens-Cross-Region: true` header prevents A→B→A loops.
+
+---
+
+## TLS / mTLS for gRPC transport
+
+```yaml
+transport:
+  provider: grpc
+  config:
+    grpcPort: "8901"
+    tlsCertFile: /etc/lens/tls/tls.crt
+    tlsKeyFile:  /etc/lens/tls/tls.key
+    tlsCAFile:   /etc/lens/tls/ca.crt   # omit for TLS only; include to enable mTLS
+```
+
+When `tlsCAFile` is set, the server requires and verifies client certificates (`RequireAndVerifyClientCert`). Omit it for one-way TLS. Omit all three to use plaintext (default).
 
 ---
 
@@ -291,9 +427,10 @@ All endpoints are available from any sidecar. Clients only need to reach one.
 | `GET` | `/api/nodes?service=X` | List live instances for a service |
 | `GET` | `/api/keys?service=X` | List declared cache keys |
 | `GET` | `/api/providers?service=X` | Active provider stack for a service |
+| `GET` | `/api/events/stream` | Server-Sent Events stream of live invalidation events |
 | `POST` | `/api/fetch` | Read a value from a specific instance's cache |
 | `POST` | `/api/invalidate` | Broadcast a cache clear across all instances |
-| `POST` | `/api/declare` | Register a cache key (called by your app) |
+| `POST` | `/api/declare` | Register a cache key schema (called by your app) |
 | `GET` | `/api/audit` | Invalidation audit log (last 500 entries) |
 | `GET` | `/metrics` | Prometheus metrics (when prometheus provider active) |
 | `GET` | `/api/obs/latency` | Latency percentiles over time (SQL observer required) |
@@ -304,32 +441,9 @@ All endpoints are available from any sidecar. Clients only need to reach one.
 
 ---
 
-## Dashboard
-
-Each sidecar serves its own dashboard. Opening any sidecar port gives you that cluster's live view — services, nodes, keys, audit log, and observability charts. Provider stack badges show the active transport, persistence, discovery, and observer combination per service.
-
-**Dev mode:**
-
-```bash
-cd dashboard
-cp .env.example .env      # set VITE_SIDECAR_PORT to your sidecar's port
-npm install && npm run dev
-```
-
-Two stacks side by side:
-
-```bash
-VITE_PORT=5173 VITE_SIDECAR_PORT=8901 npm run dev   # cluster A
-VITE_PORT=5174 VITE_SIDECAR_PORT=8921 npm run dev   # cluster B
-```
-
-Pre-built image: `ghcr.io/vedanshu7/lens-dashboard:main`
-
----
-
 ## Configuration reference
 
-All configuration is via `lens.yaml` or `LENS_*` environment variables.
+All configuration is via `lens.yaml` or `LENS_*` environment variables. YAML wins for every field it sets; env vars serve as fallbacks. Secrets (`token`, passwords) are always read from env even when a config file is present.
 
 ```yaml
 transport:
@@ -362,9 +476,15 @@ agent:
   bindAddr: "0.0.0.0"
   token: ""
   logLevel: info
+  cooldownMs: 1000
+  batchWindowMs: 0
   replay:
     enabled: true
     windowHours: 24
+  regions:
+    - name: us-west
+      url: "https://lens-us-west.internal"
+      token: ${LENS_REGION_TOKEN}
 ```
 
 | Variable | Default | Description |
@@ -379,6 +499,9 @@ agent:
 | `LENS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
 | `LENS_ADVERTISE_ADDR` | _(auto)_ | IP peers use to reach this pod. Override when behind NAT. |
 | `LENS_COOLDOWN_MS` | `1000` | Minimum ms between invalidations for the same service |
+| `LENS_BATCH_WINDOW_MS` | `0` | Coalesce invalidations within this window (ms); 0 disables batching |
+| `LENS_RATE_LIMIT_RPS` | `100` | Per-IP request rate limit (requests/s); 0 disables |
+| `LENS_RATE_LIMIT_BURST` | `200` | Per-IP token-bucket burst size |
 | `LENS_REPLAY_ENABLED` | `true` | Replay missed invalidations on startup |
 | `LENS_REPLAY_WINDOW_HOURS` | `24` | How far back the replay log is scanned on startup |
 
@@ -395,6 +518,9 @@ cd lens
 # Install the build tool
 go install ./cmd/lens-build
 
+# Optional: install the CLI companion for querying sidecars from the terminal
+go install ./cmd/lenscli
+
 # Write your lens.yaml, then build
 lens-build                          # outputs ./lens
 lens-build -output /usr/local/bin/lens
@@ -403,7 +529,7 @@ lens-build -dry-run                 # preview what will be compiled
 
 `lens-build` reads `lens.yaml`, generates a minimal import file for the configured providers, runs `go build`, and cleans up. The binary contains only what the config asked for.
 
-Minimum Go version: **1.24**
+Minimum Go version: **1.25.7**
 
 ---
 
