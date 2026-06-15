@@ -122,6 +122,24 @@ func TestHandleInvalidate_BroadcastFails_Returns500(t *testing.T) {
 	}
 }
 
+func TestHandleInvalidate_ValidPattern_Returns200(t *testing.T) {
+	a := newTestAgent(t, defaultCfg())
+	p := "user:*"
+	w := agentPost(t, a, "/api/invalidate", map[string]any{"service": "test-svc", "pattern": p})
+	if w.Code != http.StatusOK {
+		t.Errorf("valid pattern: want 200, got %d\n%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleInvalidate_InvalidPattern_Returns400(t *testing.T) {
+	a := newTestAgent(t, defaultCfg())
+	p := "user:[bad"
+	w := agentPost(t, a, "/api/invalidate", map[string]any{"service": "test-svc", "pattern": p})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("invalid pattern: want 400, got %d\n%s", w.Code, w.Body.String())
+	}
+}
+
 // --- Declare ---
 
 func TestHandleDeclare_ReturnsOK(t *testing.T) {

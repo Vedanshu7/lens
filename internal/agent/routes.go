@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -428,6 +429,12 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 	if err := validateName(req.Service); err != nil {
 		http.Error(w, "service: "+err.Error(), http.StatusBadRequest)
 		return
+	}
+	if req.Pattern != nil {
+		if _, err := path.Match(*req.Pattern, ""); err != nil {
+			http.Error(w, "pattern: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 
 	if ok, wait := a.Throttle.Allow(req.Service); !ok {
