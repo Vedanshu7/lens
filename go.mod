@@ -5,6 +5,7 @@ go 1.25.7
 require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/go-zeromq/zmq4 v0.17.0
+	github.com/go-zookeeper/zk v1.0.4
 	github.com/hashicorp/memberlist v0.5.4
 	github.com/lib/pq v1.12.3
 	github.com/microsoft/go-mssqldb v1.10.0
