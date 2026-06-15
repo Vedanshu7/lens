@@ -73,7 +73,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}@${{ steps.build-sidecar.outputs.digest }}
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: table
           exit-code: "1"
           ignore-unfixed: true
@@ -128,7 +128,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}-dashboard@${{ steps.build-dashboard.outputs.digest }}
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: table
           exit-code: "1"
           ignore-unfixed: true
