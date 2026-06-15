@@ -47,6 +47,12 @@ type Config struct {
 	CooldownMS int
 	// Cooldowns overrides CooldownMS for specific services (service name → cooldown ms).
 	Cooldowns map[string]int
+	// BatchWindowMS is the debounce window for coalescing invalidations (ms). 0 disables batching.
+	BatchWindowMS int
+	// RateLimitRPS is the per-IP request rate limit (requests per second). 0 disables limiting.
+	RateLimitRPS int
+	// RateLimitBurst is the per-IP token-bucket burst size.
+	RateLimitBurst int
 	// ReplayEnabled controls whether missed invalidations are replayed on startup.
 	ReplayEnabled bool
 	// ReplayWindowHours limits how far back the replay log is scanned.
@@ -94,6 +100,9 @@ var configPaths = []string{"./lens.yaml", "/etc/lens/lens.yaml"}
 func LoadConfig() Config {
 	db, _ := strconv.Atoi(envOr("LENS_REDIS_DB", "0"))
 	cooldown, _ := strconv.Atoi(envOr("LENS_COOLDOWN_MS", "1000"))
+	batchWindow, _ := strconv.Atoi(envOr("LENS_BATCH_WINDOW_MS", "0"))
+	rateLimitRPS, _ := strconv.Atoi(envOr("LENS_RATE_LIMIT_RPS", "100"))
+	rateLimitBurst, _ := strconv.Atoi(envOr("LENS_RATE_LIMIT_BURST", "200"))
 	replayHours, _ := strconv.Atoi(envOr("LENS_REPLAY_WINDOW_HOURS", "24"))
 	gossipPort, _ := strconv.Atoi(envOr("LENS_GOSSIP_PORT", "7946"))
 
@@ -104,6 +113,9 @@ func LoadConfig() Config {
 		AdvertiseAddr:     envOr("LENS_ADVERTISE_ADDR", detectAdvertiseAddr()),
 		Token:             os.Getenv("LENS_TOKEN"),
 		CooldownMS:        cooldown,
+		BatchWindowMS:     batchWindow,
+		RateLimitRPS:      rateLimitRPS,
+		RateLimitBurst:    rateLimitBurst,
 		ReplayEnabled:     envOr("LENS_REPLAY_ENABLED", "true") != "false",
 		ReplayWindowHours: replayHours,
 		LogLevel:          envOr("LENS_LOG_LEVEL", "info"),
@@ -295,6 +307,9 @@ type Agent struct {
 	transport    transport.Transport
 	disc         discovery.Resolver
 
+	rateLim *ipRateLimiter
+	batch   *batcher
+
 	peers       sync.Map
 	live        atomic.Bool
 	dialCancel  context.CancelFunc
@@ -343,9 +358,13 @@ func New(cfg Config) *Agent {
 		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
 		Metrics:      newMetrics(),
 		Throttle:     newThrottle(cfg.CooldownMS),
+		rateLim:      newIPRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst),
 	}
 	for svc, ms := range cfg.Cooldowns {
 		a.Throttle.SetServiceCooldown(svc, ms)
+	}
+	if cfg.BatchWindowMS > 0 {
+		a.batch = newBatcher(cfg.BatchWindowMS, a.executeBroadcast)
 	}
 	return a
 }
@@ -365,7 +384,11 @@ func NewFromDeps(cfg Config, store persistence.Backend, tc target.TargetClient, 
 		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
 		Metrics:      newMetricsWithReg(prometheus.NewRegistry()),
 		Throttle:     newThrottle(cfg.CooldownMS),
+		rateLim:      newIPRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst),
 		reconnectCh:  make(chan struct{}, 1),
+	}
+	if cfg.BatchWindowMS > 0 {
+		a.batch = newBatcher(cfg.BatchWindowMS, a.executeBroadcast)
 	}
 	a.live.Store(true)
 	return a
