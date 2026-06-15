@@ -575,3 +575,70 @@ func TestSelfProviders_IncludesObserverList(t *testing.T) {
 		t.Error("selfProviders: observers list should be non-empty when ObserverProviders configured")
 	}
 }
+
+// --- Broadcast batching ---
+
+func TestHandleInvalidate_BatchingEnabled_Returns202(t *testing.T) {
+	cfg := defaultCfg()
+	cfg.BatchWindowMS = 200
+	a := newTestAgent(t, cfg)
+
+	w := agentPost(t, a, "/api/invalidate", map[string]any{"service": "test-svc"})
+	if w.Code != http.StatusAccepted {
+		t.Errorf("batching enabled: want 202 Accepted, got %d\n%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleInvalidate_BatchingDisabled_Returns200(t *testing.T) {
+	cfg := defaultCfg()
+	cfg.BatchWindowMS = 0
+	a := newTestAgent(t, cfg)
+
+	w := agentPost(t, a, "/api/invalidate", map[string]any{"service": "test-svc"})
+	if w.Code != http.StatusOK {
+		t.Errorf("batching disabled: want 200, got %d\n%s", w.Code, w.Body.String())
+	}
+}
+
+// --- Per-IP rate limiting ---
+
+func TestLimitRequests_BelowLimit_Passes(t *testing.T) {
+	cfg := defaultCfg()
+	cfg.RateLimitRPS = 10
+	cfg.RateLimitBurst = 5
+	store, _ := persistence.New("memory", nil)
+	a := agent.NewFromDeps(cfg, store, &testutil.StubTargetClient{}, &testutil.StubTransport{}, &testutil.StubResolver{},
+		target.TargetInfo{Service: "test-svc", Instance: "test-inst"})
+	defer a.Shutdown(context.Background())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	w := httptest.NewRecorder()
+	a.Routes().ServeHTTP(w, req)
+	if w.Code == http.StatusTooManyRequests {
+		t.Errorf("first request should not be rate limited, got 429")
+	}
+}
+
+func TestLimitRequests_Disabled_AlwaysPasses(t *testing.T) {
+	cfg := defaultCfg()
+	cfg.RateLimitRPS = 0
+	store, _ := persistence.New("memory", nil)
+	a := agent.NewFromDeps(cfg, store, &testutil.StubTargetClient{}, &testutil.StubTransport{}, &testutil.StubResolver{},
+		target.TargetInfo{Service: "test-svc", Instance: "test-inst"})
+	defer a.Shutdown(context.Background())
+
+	for i := range 50 {
+		req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+		req.RemoteAddr = "10.0.0.1:12345"
+		w := httptest.NewRecorder()
+		a.Routes().ServeHTTP(w, req)
+		if w.Code == http.StatusTooManyRequests {
+			t.Errorf("iteration %d: rate limiting disabled, should never get 429", i)
+			break
+		}
+	}
+}
+
+// Compile-time check that transport import is used (already used above for Ack).
+var _ = transport.Ack{}
