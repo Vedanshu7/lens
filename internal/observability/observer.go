@@ -39,6 +39,8 @@ const (
 	EventHTTPRequest EventKind = "http_request"
 	// EventDeadPod is emitted when a peer fails to acknowledge a broadcast.
 	EventDeadPod EventKind = "dead_pod"
+	// EventConfigReload is emitted when lens.yaml is reloaded at runtime.
+	EventConfigReload EventKind = "config_reload"
 )
 
 // Event is a structured telemetry record emitted by the agent at key moments.

@@ -3,6 +3,7 @@ module github.com/Vedanshu7/lens
 go 1.25.7
 
 require (
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/hashicorp/memberlist v0.5.4
