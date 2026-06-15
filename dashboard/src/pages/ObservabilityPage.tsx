@@ -126,7 +126,7 @@ export function ObservabilityPage({ service }: { service?: string }) {
                   <YAxis tick={{ fontSize: 11 }} unit="ms" />
                   <Tooltip
                     labelFormatter={v => new Date(v as string).toLocaleString()}
-                    formatter={(v: number) => [`${v.toFixed(1)}ms`]}
+                    formatter={(v) => [typeof v === 'number' ? `${v.toFixed(1)}ms` : String(v ?? '')]}
                   />
                   <Legend />
                   <Line type="monotone" dataKey="p50" name="p50" stroke="#7c8cf5" dot={false} />
