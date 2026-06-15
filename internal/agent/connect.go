@@ -18,6 +18,7 @@ import (
 // waits 5 seconds before attempting to reconnect.
 func (a *Agent) Connect(ctx context.Context) {
 	go a.evictThrottle(ctx)
+	go a.evictIPLimiter(ctx)
 	for {
 		if err := a.dial(ctx); err != nil {
 			slog.Warn("waiting for target", "err", err, "retryIn", "10s")
@@ -136,6 +137,20 @@ func (a *Agent) evictThrottle(ctx context.Context) {
 			return
 		case <-ticker.C:
 			a.Throttle.Evict()
+		}
+	}
+}
+
+// evictIPLimiter runs until ctx is cancelled, evicting idle per-IP limiters every 5 minutes.
+func (a *Agent) evictIPLimiter(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.rateLim.evict()
 		}
 	}
 }

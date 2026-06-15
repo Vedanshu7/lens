@@ -45,6 +45,10 @@ type Config struct {
 	Token string
 	// CooldownMS is the minimum milliseconds between invalidations for the same service.
 	CooldownMS int
+	// RateLimitRPS is the per-IP request rate limit (requests per second). 0 disables limiting.
+	RateLimitRPS int
+	// RateLimitBurst is the per-IP token-bucket burst size.
+	RateLimitBurst int
 	// ReplayEnabled controls whether missed invalidations are replayed on startup.
 	ReplayEnabled bool
 	// ReplayWindowHours limits how far back the replay log is scanned.
@@ -94,6 +98,8 @@ func LoadConfig() Config {
 	cooldown, _ := strconv.Atoi(envOr("LENS_COOLDOWN_MS", "1000"))
 	replayHours, _ := strconv.Atoi(envOr("LENS_REPLAY_WINDOW_HOURS", "24"))
 	gossipPort, _ := strconv.Atoi(envOr("LENS_GOSSIP_PORT", "7946"))
+	rateLimitRPS, _ := strconv.Atoi(envOr("LENS_RATE_LIMIT_RPS", "100"))
+	rateLimitBurst, _ := strconv.Atoi(envOr("LENS_RATE_LIMIT_BURST", "200"))
 
 	cfg := Config{
 		TargetURL:         envOr("LENS_TARGET_URL", "http://localhost:8080"),
@@ -102,6 +108,8 @@ func LoadConfig() Config {
 		AdvertiseAddr:     envOr("LENS_ADVERTISE_ADDR", detectAdvertiseAddr()),
 		Token:             os.Getenv("LENS_TOKEN"),
 		CooldownMS:        cooldown,
+		RateLimitRPS:      rateLimitRPS,
+		RateLimitBurst:    rateLimitBurst,
 		ReplayEnabled:     envOr("LENS_REPLAY_ENABLED", "true") != "false",
 		ReplayWindowHours: replayHours,
 		LogLevel:          envOr("LENS_LOG_LEVEL", "info"),
@@ -282,6 +290,8 @@ type Agent struct {
 	Metrics *Metrics
 	// Throttle enforces per-service invalidation rate limits.
 	Throttle *Throttle
+	// rateLim enforces per-IP and global HTTP request rate limits.
+	rateLim *ipRateLimiter
 	// Obs is the multi-observer fan-out for structured telemetry events.
 	Obs *observability.MultiObserver
 
@@ -338,6 +348,7 @@ func New(cfg Config) *Agent {
 		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
 		Metrics:      newMetrics(),
 		Throttle:     newThrottle(cfg.CooldownMS),
+		rateLim:      newIPRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst),
 	}
 }
 
@@ -356,6 +367,7 @@ func NewFromDeps(cfg Config, store persistence.Backend, tc target.TargetClient, 
 		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
 		Metrics:      newMetricsWithReg(prometheus.NewRegistry()),
 		Throttle:     newThrottle(cfg.CooldownMS),
+		rateLim:      newIPRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst),
 		reconnectCh:  make(chan struct{}, 1),
 	}
 	a.live.Store(true)
