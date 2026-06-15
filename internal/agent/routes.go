@@ -68,6 +68,12 @@ func (rr *responseRecorder) WriteHeader(code int) {
 	rr.ResponseWriter.WriteHeader(code)
 }
 
+func (rr *responseRecorder) Flush() {
+	if f, ok := rr.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // trackRequest wraps next to record the HTTP status code in Prometheus after the call.
 func (a *Agent) trackRequest(endpoint string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +157,7 @@ func (a *Agent) Routes() http.Handler {
 	gate("POST /api/fetch", a.handleFetch)
 	gate("POST /api/invalidate", a.handleInvalidate)
 	gate("GET /api/audit", a.handleAudit)
+	gate("GET /api/events/stream", a.handleSSEStream)
 
 	a.registerObsRoutes(mux)
 
@@ -452,6 +459,10 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Cross-region loop prevention: requests from a remote region must not be
+	// re-forwarded to other regions, otherwise A→B→A→… loops form.
+	crossRegion := r.Header.Get("X-Lens-Cross-Region") != ""
+
 	if ok, wait := a.Throttle.Allow(req.Service); !ok {
 		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", wait.Seconds()))
 		w.Header().Set("Content-Type", "application/json")
@@ -558,6 +569,12 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fan-out to remote regions (fire-and-forget). Skip if this request itself
+	// came from a remote region to avoid broadcast loops.
+	if !crossRegion {
+		a.broadcastToRegions(req.Service, req.Pattern)
+	}
+
 	auditEntry, _ := json.Marshal(map[string]any{
 		"ts":        time.Now().UTC().Format(time.RFC3339),
 		"action":    "invalidate",
@@ -600,6 +617,10 @@ func (a *Agent) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"entries": out, "count": len(out)}) //nolint:errcheck
+}
+
+func (a *Agent) handleSSEStream(w http.ResponseWriter, r *http.Request) {
+	a.sse.subscribe(w, r)
 }
 
 func (a *Agent) selfProviders() map[string]any {
