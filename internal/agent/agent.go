@@ -310,6 +310,7 @@ type Agent struct {
 	disc         discovery.Resolver
 
 	batch *batcher
+	sse   *sseHub
 
 	peers       sync.Map
 	live        atomic.Bool
@@ -339,7 +340,8 @@ func New(cfg Config) *Agent {
 		os.Exit(1)
 	}
 
-	var observers []observability.Observer
+	hub := newSSEHub()
+	observers := []observability.Observer{hub}
 	if cfg.ObserverEnabled {
 		for _, pc := range cfg.ObserverProviders {
 			o, err := observability.New(pc.Name, pc.Config)
@@ -355,6 +357,7 @@ func New(cfg Config) *Agent {
 		Config:       cfg,
 		store:        store,
 		targetClient: tc,
+		sse:          hub,
 		Obs:          observability.NewMultiObserver(observers),
 		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
 		Metrics:      newMetrics(),
@@ -374,6 +377,7 @@ func New(cfg Config) *Agent {
 // Use in tests or embedding scenarios where the factory registry is not needed.
 // The agent is marked live immediately; no dial() call is required.
 func NewFromDeps(cfg Config, store persistence.Backend, tc target.TargetClient, tr transport.Transport, disc discovery.Resolver, info target.TargetInfo) *Agent {
+	hub := newSSEHub()
 	a := &Agent{
 		Config:       cfg,
 		Info:         info,
@@ -381,7 +385,8 @@ func NewFromDeps(cfg Config, store persistence.Backend, tc target.TargetClient, 
 		targetClient: tc,
 		transport:    tr,
 		disc:         disc,
-		Obs:          observability.NewMultiObserver(nil),
+		sse:          hub,
+		Obs:          observability.NewMultiObserver([]observability.Observer{hub}),
 		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
 		Metrics:      newMetricsWithReg(prometheus.NewRegistry()),
 		Throttle:     newThrottle(cfg.CooldownMS),
