@@ -452,6 +452,10 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Cross-region loop prevention: requests from a remote region must not be
+	// re-forwarded to other regions, otherwise A→B→A→… loops form.
+	crossRegion := r.Header.Get("X-Lens-Cross-Region") != ""
+
 	if ok, wait := a.Throttle.Allow(req.Service); !ok {
 		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", wait.Seconds()))
 		w.Header().Set("Content-Type", "application/json")
@@ -556,6 +560,12 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 				Success: false, PeerID: res.Instance,
 			})
 		}
+	}
+
+	// Fan-out to remote regions (fire-and-forget). Skip if this request itself
+	// came from a remote region to avoid broadcast loops.
+	if !crossRegion {
+		a.broadcastToRegions(req.Service, req.Pattern)
 	}
 
 	auditEntry, _ := json.Marshal(map[string]any{
