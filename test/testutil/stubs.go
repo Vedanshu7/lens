@@ -101,6 +101,18 @@ func (s *StubTargetClient) Keys(ctx context.Context, pattern, limit, offset stri
 
 func (s *StubTargetClient) Close() error { return nil }
 
+// StubHost is a no-op transport.TransportHost for testing transport providers directly.
+type StubHost struct{}
+
+func (StubHost) PeersForService(_ string) []transport.PeerAddr              { return nil }
+func (StubHost) ApplyInvalidation(_ context.Context, _ []byte, _ string)    {}
+func (StubHost) WriteInvalidationLog(_ context.Context, _ string, _ []byte) {}
+func (StubHost) GetFromTarget(_ context.Context, _ []byte) ([]byte, error) {
+	return []byte(`{}`), nil
+}
+func (StubHost) SelfInstance() string { return "stub-inst" }
+func (StubHost) SelfService() string  { return "stub-svc" }
+
 // StubObserver is a no-op observer. Set RecordFn to inspect recorded events.
 type StubObserver struct {
 	RecordFn func(ctx context.Context, event observability.Event) error

@@ -5,14 +5,18 @@ package grpctransport
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
@@ -26,24 +30,79 @@ func init() {
 		if grpcPort == "" {
 			grpcPort = "8901"
 		}
-		return newGRPCTransport(host, grpcPort)
+		tlsCfg, err := buildTLSConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return newGRPCTransport(host, grpcPort, tlsCfg)
 	})
+}
+
+// buildTLSConfig constructs a *tls.Config from transport config keys:
+//
+//	tlsCertFile — path to PEM-encoded server/client certificate
+//	tlsKeyFile  — path to PEM-encoded private key
+//	tlsCAFile   — path to PEM-encoded CA certificate for peer verification (enables mTLS)
+//
+// Returns nil when no TLS keys are set (plain-text mode).
+func buildTLSConfig(cfg map[string]any) (*tls.Config, error) {
+	certFile, _ := cfg["tlsCertFile"].(string)
+	keyFile, _ := cfg["tlsKeyFile"].(string)
+	caFile, _ := cfg["tlsCAFile"].(string)
+
+	if certFile == "" && keyFile == "" && caFile == "" {
+		return nil, nil // no TLS configured
+	}
+
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+
+	if certFile != "" && keyFile != "" {
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("grpc tls: load cert/key: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
+	if caFile != "" {
+		caPEM, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("grpc tls: read CA: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("grpc tls: failed to parse CA certificate")
+		}
+		// mTLS: verify client certs against this CA.
+		tlsCfg.ClientCAs = pool
+		tlsCfg.RootCAs = pool
+		tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+
+	return tlsCfg, nil
 }
 
 type grpcTransport struct {
 	host   transport.TransportHost
 	server *grpc.Server
 	conns  sync.Map
+	tlsCfg *tls.Config
 }
 
-func newGRPCTransport(host transport.TransportHost, grpcPort string) (*grpcTransport, error) {
-	t := &grpcTransport{host: host}
+func newGRPCTransport(host transport.TransportHost, grpcPort string, tlsCfg *tls.Config) (*grpcTransport, error) {
+	t := &grpcTransport{host: host, tlsCfg: tlsCfg}
 
 	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", ":"+grpcPort)
 	if err != nil {
 		return nil, fmt.Errorf("grpc listen: %w", err)
 	}
-	t.server = grpc.NewServer()
+
+	var serverOpts []grpc.ServerOption
+	if tlsCfg != nil {
+		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(tlsCfg)))
+		slog.Info("grpc: TLS enabled", "mTLS", tlsCfg.ClientAuth == tls.RequireAndVerifyClientCert)
+	}
+	t.server = grpc.NewServer(serverOpts...)
 	lensv1.RegisterLensAgentServer(t.server, &grpcHandler{host: host})
 
 	go func() {
@@ -156,8 +215,12 @@ func (t *grpcTransport) conn(addr string) (*grpc.ClientConn, error) {
 	if v, ok := t.conns.Load(addr); ok {
 		result = v.(*grpc.ClientConn)
 	} else {
+		creds := grpc.WithTransportCredentials(insecure.NewCredentials())
+		if t.tlsCfg != nil {
+			creds = grpc.WithTransportCredentials(credentials.NewTLS(t.tlsCfg))
+		}
 		var c *grpc.ClientConn
-		c, err = grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()), clientKeepalive)
+		c, err = grpc.NewClient(addr, creds, clientKeepalive)
 		if err == nil {
 			actual, loaded := t.conns.LoadOrStore(addr, c)
 			if loaded {
