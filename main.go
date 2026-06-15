@@ -52,6 +52,9 @@ func main() {
 	}()
 
 	go a.Connect(ctx)
+	if cfgPath := agent.FindConfigPath(); cfgPath != "" {
+		go a.WatchConfig(ctx, cfgPath)
+	}
 
 	<-ctx.Done()
 	slog.Info("shutting down")
