@@ -45,6 +45,8 @@ type Config struct {
 	Token string
 	// CooldownMS is the minimum milliseconds between invalidations for the same service.
 	CooldownMS int
+	// Cooldowns overrides CooldownMS for specific services (service name → cooldown ms).
+	Cooldowns map[string]int
 	// ReplayEnabled controls whether missed invalidations are replayed on startup.
 	ReplayEnabled bool
 	// ReplayWindowHours limits how far back the replay log is scanned.
@@ -156,6 +158,9 @@ func applyFile(cfg *Config, f config.File) {
 	}
 	if f.Agent.CooldownMs != 0 {
 		cfg.CooldownMS = f.Agent.CooldownMs
+	}
+	if len(f.Agent.Cooldowns) > 0 {
+		cfg.Cooldowns = f.Agent.Cooldowns
 	}
 	if f.Agent.LogLevel != "" {
 		cfg.LogLevel = f.Agent.LogLevel
@@ -330,7 +335,7 @@ func New(cfg Config) *Agent {
 		}
 	}
 
-	return &Agent{
+	a := &Agent{
 		Config:       cfg,
 		store:        store,
 		targetClient: tc,
@@ -339,6 +344,10 @@ func New(cfg Config) *Agent {
 		Metrics:      newMetrics(),
 		Throttle:     newThrottle(cfg.CooldownMS),
 	}
+	for svc, ms := range cfg.Cooldowns {
+		a.Throttle.SetServiceCooldown(svc, ms)
+	}
+	return a
 }
 
 // NewFromDeps constructs an Agent with pre-built dependencies injected directly.
