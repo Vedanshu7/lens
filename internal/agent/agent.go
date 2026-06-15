@@ -84,6 +84,18 @@ type Config struct {
 	ObserverEnabled bool
 	// ObserverProviders lists the observability providers and their configs.
 	ObserverProviders []ObserverProviderConfig
+
+	// Regions lists remote datacenter entry points for cross-region broadcast.
+	// When set, every invalidation is forwarded to each region's /api/invalidate
+	// unless the incoming request already carries X-Lens-Cross-Region: true.
+	Regions []RegionConfig
+}
+
+// RegionConfig names a remote region's agent HTTP entry point for cross-DC broadcast.
+type RegionConfig struct {
+	Name  string
+	URL   string
+	Token string
 }
 
 // ObserverProviderConfig names an observability provider and its configuration.
@@ -220,6 +232,13 @@ func applyFile(cfg *Config, f config.File) {
 			cfg.ObserverProviders[i] = ObserverProviderConfig{Name: p.ProviderName(), Config: p.Config}
 		}
 	}
+
+	if len(f.Agent.Regions) > 0 {
+		cfg.Regions = make([]RegionConfig, len(f.Agent.Regions))
+		for i, r := range f.Agent.Regions {
+			cfg.Regions[i] = RegionConfig{Name: r.Name, URL: r.URL, Token: r.Token}
+		}
+	}
 }
 
 // validateConfig checks that the configured provider names are registered.
@@ -310,6 +329,7 @@ type Agent struct {
 	disc         discovery.Resolver
 
 	batch *batcher
+	sse   *sseHub
 
 	peers       sync.Map
 	live        atomic.Bool
@@ -339,7 +359,8 @@ func New(cfg Config) *Agent {
 		os.Exit(1)
 	}
 
-	var observers []observability.Observer
+	hub := newSSEHub()
+	observers := []observability.Observer{hub}
 	if cfg.ObserverEnabled {
 		for _, pc := range cfg.ObserverProviders {
 			o, err := observability.New(pc.Name, pc.Config)
@@ -355,6 +376,7 @@ func New(cfg Config) *Agent {
 		Config:       cfg,
 		store:        store,
 		targetClient: tc,
+		sse:          hub,
 		Obs:          observability.NewMultiObserver(observers),
 		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
 		Metrics:      newMetrics(),
@@ -374,6 +396,7 @@ func New(cfg Config) *Agent {
 // Use in tests or embedding scenarios where the factory registry is not needed.
 // The agent is marked live immediately; no dial() call is required.
 func NewFromDeps(cfg Config, store persistence.Backend, tc target.TargetClient, tr transport.Transport, disc discovery.Resolver, info target.TargetInfo) *Agent {
+	hub := newSSEHub()
 	a := &Agent{
 		Config:       cfg,
 		Info:         info,
@@ -381,7 +404,8 @@ func NewFromDeps(cfg Config, store persistence.Backend, tc target.TargetClient, 
 		targetClient: tc,
 		transport:    tr,
 		disc:         disc,
-		Obs:          observability.NewMultiObserver(nil),
+		sse:          hub,
+		Obs:          observability.NewMultiObserver([]observability.Observer{hub}),
 		ProxyHTTP:    &http.Client{Timeout: 2 * time.Second},
 		Metrics:      newMetricsWithReg(prometheus.NewRegistry()),
 		Throttle:     newThrottle(cfg.CooldownMS),
