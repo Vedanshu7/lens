@@ -359,13 +359,19 @@ func TestRequireReady_NotLive_Returns503(t *testing.T) {
 	}
 }
 
-func TestRequireReady_HealthAndDeclare_SkipGate(t *testing.T) {
+func TestRequireReady_HealthReturns503WhenNotLive(t *testing.T) {
 	a := newTestAgent(t, defaultCfg())
 	a.SetReady(false)
 
-	if w := agentGet(t, a, "/api/health"); w.Code != http.StatusOK {
-		t.Errorf("health while not live: want 200, got %d", w.Code)
+	if w := agentGet(t, a, "/api/health"); w.Code != http.StatusServiceUnavailable {
+		t.Errorf("health while not live: want 503, got %d", w.Code)
 	}
+}
+
+func TestRequireReady_DeclareAllowedBeforeLive(t *testing.T) {
+	a := newTestAgent(t, defaultCfg())
+	a.SetReady(false)
+
 	w := agentPost(t, a, "/api/declare", map[string]any{"keyName": "k", "ttlInSeconds": 60})
 	if w.Code != http.StatusAccepted {
 		t.Errorf("declare while not live: want 202, got %d", w.Code)
