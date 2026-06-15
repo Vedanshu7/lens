@@ -68,6 +68,12 @@ func (rr *responseRecorder) WriteHeader(code int) {
 	rr.ResponseWriter.WriteHeader(code)
 }
 
+func (rr *responseRecorder) Flush() {
+	if f, ok := rr.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // trackRequest wraps next to record the HTTP status code in Prometheus after the call.
 func (a *Agent) trackRequest(endpoint string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +157,7 @@ func (a *Agent) Routes() http.Handler {
 	gate("POST /api/fetch", a.handleFetch)
 	gate("POST /api/invalidate", a.handleInvalidate)
 	gate("GET /api/audit", a.handleAudit)
+	gate("GET /api/events/stream", a.handleSSEStream)
 
 	a.registerObsRoutes(mux)
 
@@ -610,6 +617,10 @@ func (a *Agent) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"entries": out, "count": len(out)}) //nolint:errcheck
+}
+
+func (a *Agent) handleSSEStream(w http.ResponseWriter, r *http.Request) {
+	a.sse.subscribe(w, r)
 }
 
 func (a *Agent) selfProviders() map[string]any {
