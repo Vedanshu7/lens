@@ -31,9 +31,19 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
+  - id: lenscli
+    binary: lenscli
+    main: ./cmd/lenscli
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
 archives:
   - id: default
-    builds: [lens-grpc-memberlist, lens-nats]
+    builds: [lens-grpc-memberlist, lens-nats, lenscli]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:
