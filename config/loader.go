@@ -59,6 +59,14 @@ type AgentBlock struct {
 	Cooldowns     map[string]int `yaml:"cooldowns"`
 	LogLevel      string         `yaml:"logLevel"`
 	Replay        ReplayBlock    `yaml:"replay"`
+	Regions       []RegionBlock  `yaml:"regions"`
+}
+
+// RegionBlock describes a remote datacenter entry point for cross-region broadcast.
+type RegionBlock struct {
+	Name  string `yaml:"name"`
+	URL   string `yaml:"url"`
+	Token string `yaml:"token"`
 }
 
 // ReplayBlock controls the missed-invalidation replay feature.
