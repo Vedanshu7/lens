@@ -209,6 +209,7 @@ func (a *Agent) replayMissed(ctx context.Context) error {
 		return fmt.Errorf("read log: %w", err)
 	}
 
+	replayStart := time.Now()
 	cutoff := time.Now().UTC().Add(-time.Duration(a.Config.ReplayWindowHours) * time.Hour)
 	applied := 0
 	for _, raw := range entries {
@@ -233,6 +234,14 @@ func (a *Agent) replayMissed(ctx context.Context) error {
 
 	if applied > 0 {
 		slog.Info("replay complete", "service", a.Info.Service, "applied", applied)
+		a.Obs.Record(ctx, observability.Event{ //nolint:errcheck
+			Service:   a.Info.Service,
+			Instance:  a.Info.Instance,
+			Kind:      observability.EventReplay,
+			Success:   true,
+			Count:     applied,
+			LatencyMs: float64(time.Since(replayStart).Milliseconds()),
+		})
 	}
 	return nil
 }

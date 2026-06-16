@@ -45,6 +45,9 @@ const (
 	// to its co-located application. It captures the target-layer latency and
 	// complements EventInvalidate (which captures the sender-side transport latency).
 	EventApply EventKind = "apply"
+	// EventPersistenceWrite is emitted after each replay-log write so the
+	// persistence layer's contribution to invalidation latency is visible.
+	EventPersistenceWrite EventKind = "persistence_write"
 )
 
 // Event is a structured telemetry record emitted by the agent at key moments.
@@ -71,6 +74,9 @@ type Event struct {
 	// TargetMs is the time taken by targetClient.Invalidate() on the receiving pod.
 	// Set on EventApply events; zero on all others.
 	TargetMs float64
+	// PersistenceMs is the time taken by the persistence pipeline write (replay log).
+	// Set on EventPersistenceWrite events; zero on all others.
+	PersistenceMs float64
 	// DiscoveryMs is the time taken by the discovery provider to register this instance.
 	// Set on EventDiscovery events.
 	DiscoveryMs float64
@@ -157,16 +163,17 @@ type SQLQuerier interface {
 }
 
 // LatencyBucket holds per-minute latency percentiles returned by /api/obs/latency.
-// TransportP50 and TargetP50 break down where the time is spent: sender-side
-// broadcast vs. receiver-side application delivery.
+// TransportP50, TargetP50, and PersistenceP50 break down where the time is
+// spent across the three hot-path layers so the UI can render a stacked breakdown.
 type LatencyBucket struct {
-	Bucket       time.Time `json:"bucket"`
-	Transport    string    `json:"transport"`
-	P50          float64   `json:"p50"`
-	P95          float64   `json:"p95"`
-	P99          float64   `json:"p99"`
-	TransportP50 float64   `json:"transportP50,omitempty"`
-	TargetP50    float64   `json:"targetP50,omitempty"`
+	Bucket         time.Time `json:"bucket"`
+	Transport      string    `json:"transport"`
+	P50            float64   `json:"p50"`
+	P95            float64   `json:"p95"`
+	P99            float64   `json:"p99"`
+	TransportP50   float64   `json:"transportP50,omitempty"`
+	TargetP50      float64   `json:"targetP50,omitempty"`
+	PersistenceP50 float64   `json:"persistenceP50,omitempty"`
 }
 
 // DeadPodEvent describes a single dead-pod detection returned by /api/obs/deadpods.
@@ -192,6 +199,11 @@ type FlowStats struct {
 		Partial int `json:"partial"`
 		Failure int `json:"failure"`
 	} `json:"invalidate"`
+	Apply struct {
+		Total   int `json:"total"`
+		Success int `json:"success"`
+		Failure int `json:"failure"`
+	} `json:"apply"`
 	Fetch struct {
 		Total   int `json:"total"`
 		Success int `json:"success"`
@@ -200,17 +212,23 @@ type FlowStats struct {
 	Replay struct {
 		Total int `json:"total"`
 	} `json:"replay"`
+	PersistenceWrite struct {
+		Total int `json:"total"`
+	} `json:"persistenceWrite"`
 }
 
 // SummaryStats holds aggregate metrics for a service window, returned by /api/obs/summary.
 type SummaryStats struct {
-	TotalInvalidations int     `json:"totalInvalidations"`
-	AvgLatencyMs       float64 `json:"avgLatencyMs"`
-	P99LatencyMs       float64 `json:"p99LatencyMs"`
-	FailureRatePct     float64 `json:"failureRatePct"`
-	DeadPodsDetected   int     `json:"deadPodsDetected"`
-	PeersJoined        int     `json:"peersJoined"`
-	PeersLeft          int     `json:"peersLeft"`
+	TotalInvalidations   int     `json:"totalInvalidations"`
+	AvgLatencyMs         float64 `json:"avgLatencyMs"`
+	P99LatencyMs         float64 `json:"p99LatencyMs"`
+	FailureRatePct       float64 `json:"failureRatePct"`
+	DeadPodsDetected     int     `json:"deadPodsDetected"`
+	PeersJoined          int     `json:"peersJoined"`
+	PeersLeft            int     `json:"peersLeft"`
+	AvgTransportMs       float64 `json:"avgTransportMs"`
+	AvgTargetMs          float64 `json:"avgTargetMs"`
+	AvgPersistenceMs     float64 `json:"avgPersistenceMs"`
 }
 
 // NewMultiObserver builds a MultiObserver and starts its drain goroutine.

@@ -62,9 +62,13 @@ export interface AuditEntry {
 
 export interface LatencyBucket {
   bucket: string
+  transport: string
   p50: number
   p95: number
   p99: number
+  transportP50: number
+  targetP50: number
+  persistenceP50: number
 }
 
 export interface DeadPodEvent {
@@ -79,9 +83,11 @@ export interface DiscoveryEvent {
 }
 
 export interface FlowStats {
-  invalidate: { success: number; partial: number; failure: number }
-  fetch: { success: number; failure: number }
+  invalidate: { total: number; success: number; partial: number; failure: number }
+  apply: { total: number; success: number; failure: number }
+  fetch: { total: number; success: number; failure: number }
   replay: { total: number }
+  persistenceWrite: { total: number }
 }
 
 export interface ObsSummary {
@@ -92,6 +98,9 @@ export interface ObsSummary {
   deadPodsDetected: number
   peersJoined: number
   peersLeft: number
+  avgTransportMs: number
+  avgTargetMs: number
+  avgPersistenceMs: number
 }
 
 // ---- API surface ----

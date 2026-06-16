@@ -86,5 +86,14 @@ func (a *Agent) writeInvalidationLog(ctx context.Context, svc string, payload []
 	pipe.LPush(ctx, logKey, string(entry))
 	pipe.LTrim(ctx, logKey, 0, 99)
 	pipe.Expire(ctx, logKey, 24*time.Hour)
+	writeStart := time.Now()
 	pipe.Exec(ctx) //nolint:errcheck
+	a.Obs.Record(ctx, observability.Event{ //nolint:errcheck
+		Service:       a.Info.Service,
+		Instance:      a.Info.Instance,
+		Kind:          observability.EventPersistenceWrite,
+		Transport:     a.Config.Transport,
+		Success:       true,
+		PersistenceMs: float64(time.Since(writeStart).Milliseconds()),
+	})
 }
