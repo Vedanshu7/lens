@@ -72,6 +72,9 @@ jobs:
       - name: Scan sidecar image for vulnerabilities
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: table
@@ -127,6 +130,9 @@ jobs:
       - name: Scan dashboard image for vulnerabilities
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # 0.24.0
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: table
