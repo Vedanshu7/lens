@@ -6,6 +6,7 @@ package sqlobserver
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -150,6 +151,26 @@ func (o *sqlObserver) flush() {
 			s := e.Error
 			errStr = &s
 		}
+		var metaJSON *string
+		if e.TransportMs > 0 || e.TargetMs > 0 || e.DiscoveryMs > 0 || e.PersistenceMs > 0 {
+			m := map[string]float64{}
+			if e.TransportMs > 0 {
+				m["transport_ms"] = e.TransportMs
+			}
+			if e.TargetMs > 0 {
+				m["target_ms"] = e.TargetMs
+			}
+			if e.DiscoveryMs > 0 {
+				m["discovery_ms"] = e.DiscoveryMs
+			}
+			if e.PersistenceMs > 0 {
+				m["persistence_ms"] = e.PersistenceMs
+			}
+			if b, err := json.Marshal(m); err == nil {
+				s := string(b)
+				metaJSON = &s
+			}
+		}
 		if _, err := tx.ExecContext(ctx, insert,
 			e.Timestamp, e.Service, e.Instance,
 			string(e.Kind), e.Transport,
@@ -158,6 +179,7 @@ func (o *sqlObserver) flush() {
 			e.Confirmed, e.Total,
 			pattern, key,
 			e.PeerID,
+			metaJSON,
 		); err != nil {
 			slog.Warn("sql observer: insert", "err", err)
 		}
@@ -172,15 +194,15 @@ func (o *sqlObserver) flush() {
 // PostgreSQL uses numbered placeholders ($1..$13); others use positional (?).
 func (o *sqlObserver) insertSQL() string {
 	cols := `(ts, service, instance, kind, transport, success, error,
-		 latency_ms, confirmed, total, pattern, key, peer_id)`
+		 latency_ms, confirmed, total, pattern, key, peer_id, meta)`
 	var stmt string
 	switch o.driver {
 	case "postgres":
 		stmt = fmt.Sprintf(`INSERT INTO %s %s
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, o.table, cols)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, o.table, cols)
 	default:
 		stmt = fmt.Sprintf(`INSERT INTO %s %s
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.table, cols)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.table, cols)
 	}
 	return stmt
 }
@@ -304,14 +326,18 @@ func (o *sqlObserver) QueryLatency(ctx context.Context, service, interval string
 			SELECT date_trunc('minute', ts) AS bucket, transport,
 				PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY latency_ms) AS p50,
 				PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95,
-				PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms) AS p99
+				PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms) AS p99,
+				COALESCE(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY (meta->>'transport_ms')::float NULLS LAST), 0) AS transport_p50,
+				COALESCE(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY (meta->>'target_ms')::float NULLS LAST), 0) AS target_p50,
+				COALESCE(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY (meta->>'persistence_ms')::float NULLS LAST), 0) AS persistence_p50
 			FROM %s
 			WHERE kind = 'invalidate' AND service = $1 AND ts > NOW() - $2::interval
 			GROUP BY bucket, transport ORDER BY bucket`, o.table), service, interval)
 	case "mysql":
 		rows, err = o.db.QueryContext(ctx, fmt.Sprintf(`
 			SELECT DATE_FORMAT(ts, '%%Y-%%m-%%dT%%H:%%i:00Z') AS bucket, transport,
-				AVG(latency_ms) AS p50, MAX(latency_ms) AS p95, MAX(latency_ms) AS p99
+				AVG(latency_ms) AS p50, MAX(latency_ms) AS p95, MAX(latency_ms) AS p99,
+				0 AS transport_p50, 0 AS target_p50, 0 AS persistence_p50
 			FROM %s
 			WHERE kind = 'invalidate' AND service = ? AND ts > DATE_SUB(NOW(), INTERVAL 1 HOUR)
 			GROUP BY bucket, transport ORDER BY bucket`, o.table), service)
@@ -327,7 +353,7 @@ func (o *sqlObserver) QueryLatency(ctx context.Context, service, interval string
 	for rows.Next() {
 		var b observability.LatencyBucket
 		var bucketStr string
-		if err := rows.Scan(&bucketStr, &b.Transport, &b.P50, &b.P95, &b.P99); err != nil {
+		if err := rows.Scan(&bucketStr, &b.Transport, &b.P50, &b.P95, &b.P99, &b.TransportP50, &b.TargetP50, &b.PersistenceP50); err != nil {
 			continue
 		}
 		b.Bucket, _ = time.Parse(time.RFC3339, bucketStr)
@@ -456,8 +482,17 @@ func (o *sqlObserver) QueryFlow(ctx context.Context, service, interval string) (
 			} else {
 				stats.Fetch.Failure++
 			}
+		case "apply":
+			stats.Apply.Total++
+			if success {
+				stats.Apply.Success++
+			} else {
+				stats.Apply.Failure++
+			}
 		case "replay":
 			stats.Replay.Total++
+		case "persistence_write":
+			stats.PersistenceWrite.Total++
 		}
 	}
 	return stats, rows.Err()
@@ -477,7 +512,10 @@ func (o *sqlObserver) QuerySummary(ctx context.Context, service, interval string
 			COALESCE(COUNT(*) FILTER (WHERE kind='invalidate' AND NOT success)::float / NULLIF(COUNT(*) FILTER (WHERE kind='invalidate'), 0) * 100, 0),
 			COUNT(*) FILTER (WHERE kind='dead_pod'),
 			COUNT(*) FILTER (WHERE kind='peer_join'),
-			COUNT(*) FILTER (WHERE kind='peer_leave')
+			COUNT(*) FILTER (WHERE kind='peer_leave'),
+			COALESCE(AVG((meta->>'transport_ms')::float) FILTER (WHERE kind='invalidate' AND meta->>'transport_ms' IS NOT NULL), 0),
+			COALESCE(AVG((meta->>'target_ms')::float) FILTER (WHERE kind='apply' AND meta->>'target_ms' IS NOT NULL), 0),
+			COALESCE(AVG((meta->>'persistence_ms')::float) FILTER (WHERE kind='persistence_write' AND meta->>'persistence_ms' IS NOT NULL), 0)
 		FROM %s WHERE service = $1 AND ts > NOW() - $2::interval`, o.table)
 		args = []any{service, interval}
 	default:
@@ -494,6 +532,9 @@ func (o *sqlObserver) QuerySummary(ctx context.Context, service, interval string
 		&stats.DeadPodsDetected,
 		&stats.PeersJoined,
 		&stats.PeersLeft,
+		&stats.AvgTransportMs,
+		&stats.AvgTargetMs,
+		&stats.AvgPersistenceMs,
 	)
 	return stats, err
 }

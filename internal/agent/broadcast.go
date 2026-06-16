@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Vedanshu7/lens/internal/observability"
 	"github.com/Vedanshu7/lens/internal/store"
 )
 
@@ -30,11 +31,15 @@ const maxRetries = 3
 
 // applyInvalidation delivers m.Payload to the target service's invalidate endpoint
 // with up to maxRetries exponential-backoff attempts. Each failed attempt waits
-// attempt × 1 second before retrying.
+// attempt × 1 second before retrying. On completion it emits an EventApply event
+// recording the target-layer latency so the observability layer can distinguish
+// transport time (measured on the sender) from app-delivery time (measured here).
 func (a *Agent) applyInvalidation(ctx context.Context, m Message) {
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
+		applyStart := time.Now()
 		err := a.targetClient.Invalidate(ctx, m.Payload)
+		targetMs := float64(time.Since(applyStart).Milliseconds())
 		if err != nil {
 			lastErr = err
 			slog.Warn("invalidation attempt failed", "attempt", attempt, "max", maxRetries, "err", err)
@@ -45,9 +50,25 @@ func (a *Agent) applyInvalidation(ctx context.Context, m Message) {
 			}
 			continue
 		}
+		a.Obs.Record(ctx, observability.Event{ //nolint:errcheck
+			Service:   a.Info.Service,
+			Instance:  a.Info.Instance,
+			Kind:      observability.EventApply,
+			Transport: a.Config.Transport,
+			Success:   true,
+			TargetMs:  targetMs,
+		})
 		slog.Info("invalidation applied", "origin", m.Origin)
 		return
 	}
+	a.Obs.Record(ctx, observability.Event{ //nolint:errcheck
+		Service:   a.Info.Service,
+		Instance:  a.Info.Instance,
+		Kind:      observability.EventApply,
+		Transport: a.Config.Transport,
+		Success:   false,
+		Error:     lastErr.Error(),
+	})
 	slog.Error("invalidation failed after retries", "origin", m.Origin, "err", lastErr)
 }
 
@@ -65,5 +86,14 @@ func (a *Agent) writeInvalidationLog(ctx context.Context, svc string, payload []
 	pipe.LPush(ctx, logKey, string(entry))
 	pipe.LTrim(ctx, logKey, 0, 99)
 	pipe.Expire(ctx, logKey, 24*time.Hour)
-	pipe.Exec(ctx) //nolint:errcheck
+	writeStart := time.Now()
+	pipe.Exec(ctx)                         //nolint:errcheck
+	a.Obs.Record(ctx, observability.Event{ //nolint:errcheck
+		Service:       a.Info.Service,
+		Instance:      a.Info.Instance,
+		Kind:          observability.EventPersistenceWrite,
+		Transport:     a.Config.Transport,
+		Success:       true,
+		PersistenceMs: float64(time.Since(writeStart).Milliseconds()),
+	})
 }

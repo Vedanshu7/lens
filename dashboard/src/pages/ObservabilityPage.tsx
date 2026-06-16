@@ -101,18 +101,25 @@ export function ObservabilityPage({ service }: { service?: string }) {
         <>
           {/* Summary cards */}
           {summary && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 12, marginBottom: 28 }}>
-              <StatCard label="Invalidations" value={summary.totalInvalidations} />
-              <StatCard label="Avg Latency" value={summary.avgLatencyMs.toFixed(1)} unit="ms" />
-              <StatCard label="p99 Latency" value={summary.p99LatencyMs.toFixed(1)} unit="ms" />
-              <StatCard label="Failure Rate" value={summary.failureRatePct.toFixed(1)} unit="%" />
-              <StatCard label="Dead Pods" value={summary.deadPodsDetected} />
-              <StatCard label="Peers Joined" value={summary.peersJoined} />
-              <StatCard label="Peers Left" value={summary.peersLeft} />
-            </div>
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
+                <StatCard label="Invalidations" value={summary.totalInvalidations} />
+                <StatCard label="Avg Latency" value={summary.avgLatencyMs.toFixed(1)} unit="ms" />
+                <StatCard label="p99 Latency" value={summary.p99LatencyMs.toFixed(1)} unit="ms" />
+                <StatCard label="Failure Rate" value={summary.failureRatePct.toFixed(1)} unit="%" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 28 }}>
+                <StatCard label="Avg Transport" value={summary.avgTransportMs.toFixed(1)} unit="ms" />
+                <StatCard label="Avg Target" value={summary.avgTargetMs.toFixed(1)} unit="ms" />
+                <StatCard label="Avg Persistence" value={summary.avgPersistenceMs.toFixed(1)} unit="ms" />
+                <StatCard label="Dead Pods" value={summary.deadPodsDetected} />
+                <StatCard label="Peers Joined" value={summary.peersJoined} />
+                <StatCard label="Peers Left" value={summary.peersLeft} />
+              </div>
+            </>
           )}
 
-          {/* Latency over time */}
+          {/* End-to-end latency over time */}
           <section style={{ marginBottom: 32 }}>
             <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Invalidation Latency</h2>
             <div style={{
@@ -137,6 +144,34 @@ export function ObservabilityPage({ service }: { service?: string }) {
             </div>
           </section>
 
+          {/* Per-layer latency breakdown */}
+          {(latencyData?.buckets ?? []).length > 0 && (
+            <section style={{ marginBottom: 32 }}>
+              <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Layer Latency Breakdown (p50)</h2>
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: 20,
+              }}>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={latencyData?.buckets ?? []} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="bucket" tick={{ fontSize: 11 }}
+                      tickFormatter={v => new Date(v).toLocaleTimeString()} />
+                    <YAxis tick={{ fontSize: 11 }} unit="ms" />
+                    <Tooltip
+                      labelFormatter={v => new Date(v as string).toLocaleString()}
+                      formatter={(v) => [typeof v === 'number' ? `${v.toFixed(1)}ms` : String(v ?? '')]}
+                      contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }}
+                    />
+                    <Legend />
+                    <Bar dataKey="transportP50" name="Transport p50" stackId="layers" fill="#7c8cf5" />
+                    <Bar dataKey="targetP50" name="Target p50" stackId="layers" fill="#22c55e" />
+                    <Bar dataKey="persistenceP50" name="Persistence p50" stackId="layers" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          )}
+
           {/* Event flow */}
           {flowData && (
             <section style={{ marginBottom: 32 }}>
@@ -147,12 +182,15 @@ export function ObservabilityPage({ service }: { service?: string }) {
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart
                     data={[
-                      { name: 'Inval Success',  value: flowData.invalidate.success, fill: '#22c55e' },
-                      { name: 'Inval Partial',  value: flowData.invalidate.partial,  fill: '#f59e0b' },
-                      { name: 'Inval Failure',  value: flowData.invalidate.failure,  fill: '#ef4444' },
-                      { name: 'Fetch Success',  value: flowData.fetch.success,       fill: '#7c8cf5' },
-                      { name: 'Fetch Failure',  value: flowData.fetch.failure,       fill: '#f43f5e' },
-                      { name: 'Replay',         value: flowData.replay.total,        fill: '#a78bfa' },
+                      { name: 'Inval OK',      value: flowData.invalidate.success,         fill: '#22c55e' },
+                      { name: 'Inval Partial', value: flowData.invalidate.partial,          fill: '#f59e0b' },
+                      { name: 'Inval Fail',    value: flowData.invalidate.failure,          fill: '#ef4444' },
+                      { name: 'Apply OK',      value: flowData.apply?.success ?? 0,         fill: '#34d399' },
+                      { name: 'Apply Fail',    value: flowData.apply?.failure ?? 0,         fill: '#f43f5e' },
+                      { name: 'Fetch OK',      value: flowData.fetch.success,               fill: '#7c8cf5' },
+                      { name: 'Fetch Fail',    value: flowData.fetch.failure,               fill: '#c084fc' },
+                      { name: 'Persist Writes', value: flowData.persistenceWrite?.total ?? 0, fill: '#fb923c' },
+                      { name: 'Replay',        value: flowData.replay.total,                fill: '#a78bfa' },
                     ]}
                     margin={{ top: 4, right: 8, left: 0, bottom: 24 }}
                   >
@@ -166,7 +204,9 @@ export function ObservabilityPage({ service }: { service?: string }) {
                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                       {[
                         '#22c55e', '#f59e0b', '#ef4444',
-                        '#7c8cf5', '#f43f5e', '#a78bfa',
+                        '#34d399', '#f43f5e',
+                        '#7c8cf5', '#c084fc',
+                        '#fb923c', '#a78bfa',
                       ].map((color, i) => <Cell key={i} fill={color} />)}
                     </Bar>
                   </BarChart>

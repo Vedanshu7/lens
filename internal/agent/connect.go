@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Vedanshu7/lens/internal/discovery"
+	"github.com/Vedanshu7/lens/internal/observability"
 	"github.com/Vedanshu7/lens/internal/store"
 	"github.com/Vedanshu7/lens/internal/target"
 	itransport "github.com/Vedanshu7/lens/internal/transport"
@@ -101,9 +102,17 @@ func (a *Agent) dial(ctx context.Context) error {
 			GRPCAddr: a.Config.AdvertiseAddr + ":" + grpcPort,
 			AgentURL: a.selfURL(),
 		}
+		discStart := time.Now()
 		if err := disc.Register(dialCtx, self); err != nil {
 			return fmt.Errorf("discovery register: %w", err)
 		}
+		a.Obs.Record(dialCtx, observability.Event{ //nolint:errcheck
+			Service:     a.Info.Service,
+			Instance:    a.Info.Instance,
+			Kind:        observability.EventDiscovery,
+			Success:     true,
+			DiscoveryMs: float64(time.Since(discStart).Milliseconds()),
+		})
 
 		eventCh, err := disc.Watch(dialCtx)
 		if err != nil {
@@ -200,6 +209,7 @@ func (a *Agent) replayMissed(ctx context.Context) error {
 		return fmt.Errorf("read log: %w", err)
 	}
 
+	replayStart := time.Now()
 	cutoff := time.Now().UTC().Add(-time.Duration(a.Config.ReplayWindowHours) * time.Hour)
 	applied := 0
 	for _, raw := range entries {
@@ -224,6 +234,14 @@ func (a *Agent) replayMissed(ctx context.Context) error {
 
 	if applied > 0 {
 		slog.Info("replay complete", "service", a.Info.Service, "applied", applied)
+		a.Obs.Record(ctx, observability.Event{ //nolint:errcheck
+			Service:   a.Info.Service,
+			Instance:  a.Info.Instance,
+			Kind:      observability.EventReplay,
+			Success:   true,
+			Count:     applied,
+			LatencyMs: float64(time.Since(replayStart).Milliseconds()),
+		})
 	}
 	return nil
 }
