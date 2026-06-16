@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Vedanshu7/lens/internal/agent"
+	"github.com/Vedanshu7/lens/internal/observability"
 	"github.com/Vedanshu7/lens/internal/persistence"
 	_ "github.com/Vedanshu7/lens/internal/persistence/memory"
 	"github.com/Vedanshu7/lens/internal/target"
@@ -113,5 +114,75 @@ func TestApplyInvalidation_ContextCancellation_StopsRetries(t *testing.T) {
 	}
 	if calls.Load() > 2 {
 		t.Errorf("expected ≤2 attempts after cancellation, got %d", calls.Load())
+	}
+}
+
+func TestApplyInvalidation_EmitsEventApply_OnSuccess(t *testing.T) {
+	tc := &testutil.StubTargetClient{}
+	a := newBroadcastAgent(t, tc)
+
+	eventCh := make(chan observability.Event, 10)
+	obs := &testutil.StubObserver{
+		RecordFn: func(_ context.Context, e observability.Event) error {
+			eventCh <- e
+			return nil
+		},
+	}
+	a.Obs = observability.NewMultiObserver([]observability.Observer{obs})
+	t.Cleanup(func() { a.Obs.Close() }) //nolint:errcheck
+
+	a.ApplyInvalidation(context.Background(), []byte(`{"pattern":"user:"}`), "peer-1")
+
+	select {
+	case e := <-eventCh:
+		if e.Kind != observability.EventApply {
+			t.Errorf("want EventApply, got %q", e.Kind)
+		}
+		if !e.Success {
+			t.Error("want Success=true for successful apply")
+		}
+		if e.TargetMs < 0 {
+			t.Errorf("want non-negative TargetMs, got %f", e.TargetMs)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no EventApply emitted within 2s")
+	}
+}
+
+func TestApplyInvalidation_EmitsEventApply_OnFailure(t *testing.T) {
+	tc := &testutil.StubTargetClient{
+		InvalidateFn: func(_ context.Context, _ []byte) error {
+			return errors.New("app unreachable")
+		},
+	}
+	a := newBroadcastAgent(t, tc)
+
+	eventCh := make(chan observability.Event, 10)
+	obs := &testutil.StubObserver{
+		RecordFn: func(_ context.Context, e observability.Event) error {
+			eventCh <- e
+			return nil
+		},
+	}
+	a.Obs = observability.NewMultiObserver([]observability.Observer{obs})
+	t.Cleanup(func() { a.Obs.Close() }) //nolint:errcheck
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	a.ApplyInvalidation(ctx, []byte(`{}`), "peer-1")
+
+	select {
+	case e := <-eventCh:
+		if e.Kind != observability.EventApply {
+			t.Errorf("want EventApply, got %q", e.Kind)
+		}
+		if e.Success {
+			t.Error("want Success=false after all retries exhausted")
+		}
+		if e.Error == "" {
+			t.Error("want non-empty Error on failure")
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("no EventApply emitted within 15s")
 	}
 }

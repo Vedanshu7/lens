@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Vedanshu7/lens/internal/discovery"
+	"github.com/Vedanshu7/lens/internal/observability"
 	"github.com/Vedanshu7/lens/internal/store"
 	"github.com/Vedanshu7/lens/internal/target"
 	itransport "github.com/Vedanshu7/lens/internal/transport"
@@ -101,9 +102,17 @@ func (a *Agent) dial(ctx context.Context) error {
 			GRPCAddr: a.Config.AdvertiseAddr + ":" + grpcPort,
 			AgentURL: a.selfURL(),
 		}
+		discStart := time.Now()
 		if err := disc.Register(dialCtx, self); err != nil {
 			return fmt.Errorf("discovery register: %w", err)
 		}
+		a.Obs.Record(dialCtx, observability.Event{ //nolint:errcheck
+			Service:     a.Info.Service,
+			Instance:    a.Info.Instance,
+			Kind:        observability.EventDiscovery,
+			Success:     true,
+			DiscoveryMs: float64(time.Since(discStart).Milliseconds()),
+		})
 
 		eventCh, err := disc.Watch(dialCtx)
 		if err != nil {

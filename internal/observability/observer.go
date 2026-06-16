@@ -41,6 +41,10 @@ const (
 	EventDeadPod EventKind = "dead_pod"
 	// EventConfigReload is emitted when lens.yaml is reloaded at runtime.
 	EventConfigReload EventKind = "config_reload"
+	// EventApply is emitted on each receiving pod when it delivers an invalidation
+	// to its co-located application. It captures the target-layer latency and
+	// complements EventInvalidate (which captures the sender-side transport latency).
+	EventApply EventKind = "apply"
 )
 
 // Event is a structured telemetry record emitted by the agent at key moments.
@@ -59,9 +63,16 @@ type Event struct {
 	Success bool
 	// Error holds the error message when Success is false.
 	Error string
-	// LatencyMs is the operation duration in milliseconds.
+	// LatencyMs is the total operation duration in milliseconds (end-to-end for the handler).
 	LatencyMs float64
-	// DiscoveryMs is the time taken to resolve the peer list.
+	// TransportMs is the time taken by transport.Broadcast() on the sender side.
+	// Set on EventInvalidate events; zero on all others.
+	TransportMs float64
+	// TargetMs is the time taken by targetClient.Invalidate() on the receiving pod.
+	// Set on EventApply events; zero on all others.
+	TargetMs float64
+	// DiscoveryMs is the time taken by the discovery provider to register this instance.
+	// Set on EventDiscovery events.
 	DiscoveryMs float64
 	// Pattern is the invalidation pattern, set for EventInvalidate.
 	Pattern *string
@@ -146,12 +157,16 @@ type SQLQuerier interface {
 }
 
 // LatencyBucket holds per-minute latency percentiles returned by /api/obs/latency.
+// TransportP50 and TargetP50 break down where the time is spent: sender-side
+// broadcast vs. receiver-side application delivery.
 type LatencyBucket struct {
-	Bucket    time.Time `json:"bucket"`
-	Transport string    `json:"transport"`
-	P50       float64   `json:"p50"`
-	P95       float64   `json:"p95"`
-	P99       float64   `json:"p99"`
+	Bucket       time.Time `json:"bucket"`
+	Transport    string    `json:"transport"`
+	P50          float64   `json:"p50"`
+	P95          float64   `json:"p95"`
+	P99          float64   `json:"p99"`
+	TransportP50 float64   `json:"transportP50,omitempty"`
+	TargetP50    float64   `json:"targetP50,omitempty"`
 }
 
 // DeadPodEvent describes a single dead-pod detection returned by /api/obs/deadpods.

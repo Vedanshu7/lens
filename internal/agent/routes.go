@@ -500,7 +500,9 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
+	broadcastStart := time.Now()
 	acks, err := a.transport.Broadcast(ctx, req.Service, payload)
+	transportMs := float64(time.Since(broadcastStart).Milliseconds())
 	if err != nil {
 		slog.Error("broadcast failed", "err", err)
 		http.Error(w, fmt.Sprintf("broadcast failed: %v", err), http.StatusInternalServerError)
@@ -557,6 +559,7 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 		Service: req.Service, Instance: a.Info.Instance,
 		Kind: observability.EventInvalidate, Transport: a.Config.Transport,
 		Success: confirmed == total, LatencyMs: elapsedMs,
+		TransportMs: transportMs,
 		Confirmed: confirmed, Total: total, Pattern: req.Pattern,
 	})
 	for _, res := range results {
