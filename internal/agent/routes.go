@@ -560,7 +560,7 @@ func (a *Agent) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 		Kind: observability.EventInvalidate, Transport: a.Config.Transport,
 		Success: confirmed == total, LatencyMs: elapsedMs,
 		TransportMs: transportMs,
-		Confirmed: confirmed, Total: total, Pattern: req.Pattern,
+		Confirmed:   confirmed, Total: total, Pattern: req.Pattern,
 	})
 	for _, res := range results {
 		if !res.Success && res.Error == "no response (timeout)" {

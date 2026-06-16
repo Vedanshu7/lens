@@ -219,16 +219,16 @@ type FlowStats struct {
 
 // SummaryStats holds aggregate metrics for a service window, returned by /api/obs/summary.
 type SummaryStats struct {
-	TotalInvalidations   int     `json:"totalInvalidations"`
-	AvgLatencyMs         float64 `json:"avgLatencyMs"`
-	P99LatencyMs         float64 `json:"p99LatencyMs"`
-	FailureRatePct       float64 `json:"failureRatePct"`
-	DeadPodsDetected     int     `json:"deadPodsDetected"`
-	PeersJoined          int     `json:"peersJoined"`
-	PeersLeft            int     `json:"peersLeft"`
-	AvgTransportMs       float64 `json:"avgTransportMs"`
-	AvgTargetMs          float64 `json:"avgTargetMs"`
-	AvgPersistenceMs     float64 `json:"avgPersistenceMs"`
+	TotalInvalidations int     `json:"totalInvalidations"`
+	AvgLatencyMs       float64 `json:"avgLatencyMs"`
+	P99LatencyMs       float64 `json:"p99LatencyMs"`
+	FailureRatePct     float64 `json:"failureRatePct"`
+	DeadPodsDetected   int     `json:"deadPodsDetected"`
+	PeersJoined        int     `json:"peersJoined"`
+	PeersLeft          int     `json:"peersLeft"`
+	AvgTransportMs     float64 `json:"avgTransportMs"`
+	AvgTargetMs        float64 `json:"avgTargetMs"`
+	AvgPersistenceMs   float64 `json:"avgPersistenceMs"`
 }
 
 // NewMultiObserver builds a MultiObserver and starts its drain goroutine.
