@@ -1,8 +1,8 @@
 # Lens
 
-Distributed caches go stale. When one replica writes a change, every other pod keeps serving the old value until TTL expires. The usual fix — a cache client that calls a central invalidation bus — adds a new SDK dependency, couples your service to your cache infrastructure, and still misses pods that were offline during the event.
+Distributed caches go stale. When one replica writes a change, every other pod keeps serving the old value until TTL expires. The usual fix (a cache client that calls a central invalidation bus) adds a new SDK dependency, couples your service to your cache infrastructure, and still misses pods that were offline during the event.
 
-Lens is a zero-SDK cache-invalidation sidecar. Deploy one beside each replica. They find each other, broadcast invalidation events cluster-wide, and replay any events missed while a pod was down — all with no changes to your application code and no coupling to your cache library.
+Lens is a zero-SDK cache-invalidation sidecar. Deploy one beside each replica. They find each other, broadcast invalidation events cluster-wide, and replay any events missed while a pod was down. No changes to your application code and no coupling to your cache library.
 
 ```
 One sidecar per replica.  Pick any transport, discovery, and observability provider.
@@ -54,7 +54,7 @@ graph LR
 4. Each peer receives the event, calls `POST /internal/lens/invalidate` on its co-located app, and logs the event to persistence
 5. On restart → replays any invalidations that arrived while the pod was offline
 
-Any client or dashboard only needs to reach **one** sidecar — it routes to the rest.
+Any client or dashboard only needs to reach **one** sidecar. It routes to the rest.
 
 ---
 
@@ -77,7 +77,7 @@ curl -X POST http://localhost:8900/api/invalidate \
 
 ## Providers
 
-### Transport — how sidecars broadcast to each other
+### Transport: how sidecars broadcast to each other
 
 | Provider | Best for |
 |---|---|
@@ -87,7 +87,7 @@ curl -X POST http://localhost:8900/api/invalidate \
 | `zeromq` | Brokerless pub/sub, minimal footprint |
 | `redis-streams` | Reuses an existing Redis instance, zero extra infra |
 
-### Discovery — how sidecars find each other
+### Discovery: how sidecars find each other
 
 | Provider | Best for |
 |---|---|
@@ -95,36 +95,36 @@ curl -X POST http://localhost:8900/api/invalidate \
 | `nats` | Uses the same broker already running for transport |
 | `dnssrv` | Kubernetes headless services, Consul DNS |
 | `static` | Fixed known peer list, no infrastructure |
-| `zookeeper` | ZooKeeper ensemble, ephemeral znodes — existing ZK infra |
+| `zookeeper` | ZooKeeper ensemble, ephemeral znodes; for existing ZK infra |
 | `mdns` | mDNS/Zeroconf `_lens._tcp`, zero config, local network only |
 
-### Persistence — replay log, audit trail, shared metadata
+### Persistence: replay log, audit trail, shared metadata
 
 | Provider | Best for |
 |---|---|
 | `redis` | Production default, durable, widely available. Always compiled in. |
-| `natskv` | All-NATS stack, uses JetStream KV — no Redis needed |
+| `natskv` | All-NATS stack, uses JetStream KV; no Redis needed |
 | `memory` | Local dev and tests, zero infrastructure. Always compiled in. |
 
-### Observability — multiple providers can run simultaneously
+### Observability: multiple providers can run simultaneously
 
 | Provider | What it does |
 |---|---|
 | `sql` | Structured events to SQLite, PostgreSQL, or MySQL. Powers the dashboard. Always compiled in. |
 | `prometheus` | Scrape endpoint at `/metrics`. Always compiled in. |
 | `otel` | OTLP traces and metrics to any OpenTelemetry collector |
-| `influxdb` | InfluxDB v2 line protocol — time-series metrics over HTTP |
-| `opensearch` | OpenSearch / Elasticsearch bulk API — full-text search over events |
+| `influxdb` | InfluxDB v2 line protocol, time-series metrics over HTTP |
+| `opensearch` | OpenSearch / Elasticsearch bulk API, full-text search over events |
 | `webhook` | HTTP POST on every event to a configurable URL. Always compiled in. |
 | `stdout` | JSON lines to stdout, feeds any log aggregation pipeline. Always compiled in. |
 | `noop` | Discard all events (default when no provider is configured). Always compiled in. |
 
-### Target — how the sidecar talks to its co-located app
+### Target: how the sidecar talks to its co-located app
 
 | Provider | Best for |
 |---|---|
 | `http` | Default. Plain HTTP over TCP. Always compiled in. |
-| `unix` | Same HTTP contract over a Unix domain socket — zero TCP overhead for same-host calls. |
+| `unix` | Same HTTP contract over a Unix domain socket, zero TCP overhead for same-host calls. |
 | `grpc` | gRPC via the `LensTarget` proto service. Lowest overhead, strongly typed. |
 
 ---
@@ -176,7 +176,7 @@ graph TD
 
 ## Example stacks
 
-The same codebase, different `lens.yaml` — no code or build changes.
+The same codebase, different `lens.yaml`. No code or build changes.
 
 ### Minimal (zero external infrastructure)
 
@@ -276,7 +276,7 @@ lens-build
 
 ## Integrating your app
 
-The sidecar calls your app through the configured **target provider** (`http` by default, or `unix`/`grpc` for lower overhead). Expose these endpoints — the contract is the same regardless of which target provider is used.
+The sidecar calls your app through the configured **target provider** (`http` by default, or `unix`/`grpc` for lower overhead). Expose these endpoints; the contract is the same regardless of which target provider is used.
 
 ### Identity endpoint
 
@@ -307,7 +307,7 @@ POST /internal/lens/get
 
 Return the current value of a key from this pod's cache. Return `"found": false` when absent.
 
-### Declare endpoint (optional — enables dashboard key browsing)
+### Declare endpoint (optional, enables dashboard key browsing)
 
 ```
 POST http://localhost:8900/api/declare
@@ -320,9 +320,9 @@ Call this whenever your app writes to its cache. Keys appear in the dashboard wi
 
 ## Dashboard
 
-Each sidecar serves its own dashboard. Opening any sidecar port gives a live view of the cluster — services, nodes, cache keys, audit log, and observability charts. Provider stack badges show the active transport, persistence, discovery, and observer combination per service.
+Each sidecar serves its own dashboard. Opening any sidecar port gives a live view of the cluster: services, nodes, cache keys, audit log, and observability charts. Provider stack badges show the active transport, persistence, discovery, and observer combination per service.
 
-The dashboard subscribes to `GET /api/events/stream` (Server-Sent Events) for real-time invalidation updates — no polling.
+The dashboard subscribes to `GET /api/events/stream` (Server-Sent Events) for real-time invalidation updates with no polling.
 
 **Dev mode:**
 
