@@ -8,7 +8,7 @@ require (
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/go-zookeeper/zk v1.0.4
 	github.com/hashicorp/mdns v1.0.7
-	github.com/hashicorp/memberlist v0.5.4
+	github.com/hashicorp/memberlist v0.6.0
 	github.com/lib/pq v1.12.3
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/nats-io/nats.go v1.52.0
@@ -20,7 +20,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
 	golang.org/x/time v0.15.0
-	google.golang.org/grpc v1.81.1
+	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -40,8 +40,8 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-immutable-radix v1.0.0 // indirect
-	github.com/hashicorp/go-metrics v0.5.4 // indirect
+	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
+	github.com/hashicorp/go-metrics v0.6.0 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.5 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
