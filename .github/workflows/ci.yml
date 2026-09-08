@@ -83,11 +83,16 @@ jobs:
           go-version: "1.25"
           cache: true
 
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-
+      # Pinned, and fetched as a prebuilt binary rather than compiled here.
+      # "go install ...@latest" broke this job the day golangci-lint v2.13.2
+      # started requiring go >= 1.26 while the job pins Go 1.25. An unpinned
+      # tool makes every build depend on someone else's release schedule, and
+      # a prebuilt binary is not coupled to this job's toolchain at all.
       - name: golangci-lint
-        run: golangci-lint run --timeout=5m
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.13.2
+          args: --timeout=5m
 
   tidy:
     name: go mod tidy
