@@ -13,48 +13,47 @@ Switch at config time.    No code changes.  No rebuild.
 
 ## How it works
 
+One sidecar runs beside each replica. Everything it touches sits behind one of
+five provider interfaces, so the shape below holds for every configuration. Only
+what sits on the far side of each seam changes.
+
 ```mermaid
-graph LR
-    subgraph Pod A
-        AppA[App A]
-        SA[Sidecar A\n:8900]
-        AppA <-->|localhost| SA
+graph TB
+    subgraph pod["Each replica"]
+        App["Your app"]
+        SC["Lens sidecar"]
     end
 
-    subgraph Pod B
-        AppB[App B]
-        SB[Sidecar B\n:8900]
-        AppB <-->|localhost| SB
-    end
+    App <-->|"target layer"| SC
 
-    subgraph Pod C
-        AppC[App C]
-        SC[Sidecar C\n:8900]
-        AppC <-->|localhost| SC
-    end
+    SC <-->|"discovery layer"| Peers["Peer sidecars"]
+    SC <-->|"transport layer"| Peers
+    SC -->|"persistence layer"| Store[("Replay log, audit trail")]
+    SC -->|"observability layer"| Obs["Metrics, traces, events"]
 
-    Store[(Persistence layer)]
-
-    SA <-->|transport layer| SB
-    SA <-->|transport layer| SC
-    SB <-->|transport layer| SC
-
-    SA <-->|replay log\naudit log| Store
-    SB <--> Store
-    SC <--> Store
-
-    Dashboard[Dashboard / API client] -->|HTTP| SA
+    Client["Client or dashboard"] -->|"HTTP :8900"| SC
 ```
 
 **Lifecycle:**
 
-1. Sidecar starts → calls `GET /internal/lens/info` on the co-located app to learn its service/instance identity
-2. Announces itself through the configured discovery layer
-3. Client or app calls `POST /api/invalidate` → throttled and optionally batched → broadcast to all peers via the transport layer
-4. Each peer receives the event, calls `POST /internal/lens/invalidate` on its co-located app, and logs the event to persistence
-5. On restart → replays any invalidations that arrived while the pod was offline
+1. The sidecar starts and asks the app it fronts for its service and instance identity, over the configured target layer
+2. It registers itself with the discovery layer and begins watching for peers
+3. A client or the app posts an invalidation to `POST /api/invalidate`, which is throttled and optionally batched
+4. The event goes out over the transport layer to every peer
+5. Each peer delivers the invalidation to the app it fronts over its target layer, and records the event through the persistence layer
+6. On restart, a sidecar replays the invalidations it missed while it was down
 
 Any client or dashboard only needs to reach **one** sidecar. It routes to the rest.
+
+**What your provider choice changes:**
+
+| Layer | What varies |
+|---|---|
+| Transport | `grpc` and `zeromq` deliver directly between sidecars, so peers form a mesh. `nats`, `kafka` and `redis-streams` publish to a broker that fans out, so sidecars never connect to each other. |
+| Discovery | `memberlist`, `nats`, `zookeeper`, `mdns` and `dnssrv` announce the instance and track peers as they come and go. `static` announces nothing and reads a fixed seed list, so step 2 is local bookkeeping only. |
+| Persistence | `redis` and `natskv` survive a restart, so step 6 replays. `memory` is in-process and loses everything when the sidecar exits, so there is nothing to replay. |
+| Target | `http` and `unix` call `/internal/lens/*` on your app. `grpc` calls a proto service instead, so your app implements the service rather than the endpoints. `http` and `grpc` take an address and default to localhost, but nothing requires the app to be on the same host. Only `unix` is same-host by construction. |
+| Observability | Any number can run at once, including none. |
 
 ---
 
@@ -119,58 +118,16 @@ curl -X POST http://localhost:8900/api/invalidate \
 | `stdout` | JSON lines to stdout, feeds any log aggregation pipeline. Always compiled in. |
 | `noop` | Discard all events (default when no provider is configured). Always compiled in. |
 
-### Target: how the sidecar talks to its co-located app
+### Target: how the sidecar talks to the app it fronts
 
-| Provider | Best for |
-|---|---|
-| `http` | Default. Plain HTTP over TCP. Always compiled in. |
-| `unix` | Same HTTP contract over a Unix domain socket, zero TCP overhead for same-host calls. |
-| `grpc` | gRPC via the `LensTarget` proto service. Lowest overhead, strongly typed. |
+Usually that app is in the same pod, which is what the sidecar model is for, but
+`http` and `grpc` take an address and will talk to a remote one just as happily.
 
----
-
-## Provider map
-
-```mermaid
-graph TD
-    Agent[Lens Agent]
-
-    Agent --> Transport
-    Agent --> Persistence
-    Agent --> Discovery
-    Agent --> Observability
-    Agent --> Target
-
-    Transport --> grpc[grpc\ndirect pod-to-pod]
-    Transport --> nats_t[nats\nbroker fan-out]
-    Transport --> kafka[kafka\nhigh-throughput]
-    Transport --> zeromq[zeromq\nbrokerless]
-    Transport --> redisstreams[redis-streams\nreuse existing Redis]
-
-    Persistence --> redis_p[redis\ndurable default]
-    Persistence --> natskv[natskv\nJetStream KV]
-    Persistence --> memory[memory\ndev / test]
-
-    Discovery --> memberlist[memberlist\ngossip UDP]
-    Discovery --> nats_d[nats\nsame broker as transport]
-    Discovery --> dnssrv[dnssrv\nDNS SRV / K8s headless]
-    Discovery --> static_d[static\nfixed seed list]
-    Discovery --> zookeeper[zookeeper\nephemeral znodes]
-    Discovery --> mdns[mdns\nmDNS Zeroconf]
-
-    Observability --> sql[sql\nSQLite / PostgreSQL / MySQL]
-    Observability --> prometheus[prometheus\n/metrics]
-    Observability --> otel[otel\nOTLP traces + metrics]
-    Observability --> influxdb[influxdb\nline protocol v2]
-    Observability --> opensearch[opensearch\nbulk API]
-    Observability --> webhook[webhook\nHTTP POST events]
-    Observability --> stdout[stdout\nJSON log lines]
-    Observability --> noop[noop\ndiscard]
-
-    Target --> http_t[http\nplain HTTP default]
-    Target --> unix_t[unix\nUnix socket zero-overhead]
-    Target --> grpc_t[grpc\nproto service]
-```
+| Provider | Best for | Address |
+|---|---|---|
+| `http` | Default. Plain HTTP over TCP. Always compiled in. | `targetURL`, default `http://localhost:8080` |
+| `unix` | Same HTTP contract over a Unix domain socket, zero TCP overhead. Same host only. | `socketPath`, required |
+| `grpc` | gRPC via the `LensTarget` proto service. Lowest overhead, strongly typed. | `grpcAddr`, default `localhost:8902` |
 
 ---
 
@@ -461,7 +418,7 @@ discovery:
 target:
   provider: http          # http (default) | unix | grpc
   config:
-    url: "http://localhost:8080"   # http provider
+    targetURL: "http://localhost:8080"   # http provider
     socketPath: /tmp/app.sock      # unix provider
     grpcAddr: "localhost:8902"     # grpc provider
 
